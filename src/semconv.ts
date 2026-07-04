@@ -50,6 +50,8 @@ export const ATTR = {
   EXCEPTION_MESSAGE: 'exception.message',
   EXCEPTION_FILE: 'exception.file',
   EXCEPTION_LINE: 'exception.line',
+  EXCEPTION_COLUMN: 'exception.column',
+  EXCEPTION_GROUP: 'exception.group',
   EXCEPTION_STACKTRACE: 'exception.stacktrace',
 } as const;
 

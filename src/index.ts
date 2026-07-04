@@ -6,11 +6,13 @@ import { instrumentFetch } from './instrumentations/fetch';
 import { instrumentNavigation } from './instrumentations/navigation';
 import { instrumentWebVitals } from './instrumentations/webVitals';
 import { instrumentXhr } from './instrumentations/xhr';
+import { fingerprint } from './fingerprint';
 import { ATTR, SPAN } from './semconv';
 import { now, Tracer } from './tracer';
 import type { Attributes, Telemetry, TelemetryConfig } from './types';
 
 export { ATTR, SPAN } from './semconv';
+export { fingerprint, normalizeMessage } from './fingerprint';
 export type { Attributes, Telemetry, TelemetryConfig, WireSpan, SpanKind, SpanStatus } from './types';
 
 /**
@@ -60,6 +62,7 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
         attributes: {
           [ATTR.EXCEPTION_TYPE]: err?.name ?? 'Error',
           [ATTR.EXCEPTION_MESSAGE]: String(err?.message ?? error).slice(0, 1024),
+          [ATTR.EXCEPTION_GROUP]: fingerprint(err?.name ?? 'Error', String(err?.message ?? error)),
           ...(err?.stack ? { [ATTR.EXCEPTION_STACKTRACE]: err.stack.slice(0, 8000) } : {}),
           ...(attributes ?? {}),
         } satisfies Attributes,

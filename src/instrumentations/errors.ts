@@ -1,3 +1,4 @@
+import { fingerprint } from '../fingerprint';
 import { ATTR, SPAN } from '../semconv';
 import { now } from '../tracer';
 import type { Tracer } from '../tracer';
@@ -17,8 +18,10 @@ export function instrumentErrors(tracer: Tracer): void {
       attributes: {
         [ATTR.EXCEPTION_TYPE]: err?.name ?? 'Error',
         [ATTR.EXCEPTION_MESSAGE]: clip(String(e.message ?? ''), 1024),
+        [ATTR.EXCEPTION_GROUP]: fingerprint(err?.name ?? 'Error', String(e.message ?? '')),
         [ATTR.EXCEPTION_FILE]: clip(String(e.filename ?? ''), 512),
         [ATTR.EXCEPTION_LINE]: e.lineno ?? 0,
+        [ATTR.EXCEPTION_COLUMN]: e.colno ?? 0,
         ...(err?.stack ? { [ATTR.EXCEPTION_STACKTRACE]: clip(err.stack, 8000) } : {}),
       },
     });
@@ -36,6 +39,7 @@ export function instrumentErrors(tracer: Tracer): void {
       attributes: {
         [ATTR.EXCEPTION_TYPE]: (typeof reason === 'object' && reason?.name) || 'UnhandledRejection',
         [ATTR.EXCEPTION_MESSAGE]: clip(message, 1024),
+        [ATTR.EXCEPTION_GROUP]: fingerprint((typeof reason === 'object' && reason?.name) || 'UnhandledRejection', message),
         ...(typeof reason === 'object' && reason?.stack ? { [ATTR.EXCEPTION_STACKTRACE]: clip(reason.stack, 8000) } : {}),
       },
     });

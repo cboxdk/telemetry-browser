@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-07-04
+
+### Added
+
+- **`exception.group` fingerprint** on error spans — matching the backend
+  so telemetry-ui groups frontend and backend errors uniformly (no more
+  self-grouping in the UI). Since minified file names/line numbers shift
+  every deploy, the browser groups on `type` + a NORMALIZED message
+  (digits/uuids/urls/quoted strings masked), which is deploy-stable.
+  `exception.column` is captured too. The raw stack/file/line/column +
+  release are emitted so a future source-map symbolication step can
+  re-group on the original throw site. `fingerprint`/`normalizeMessage`
+  are exported for the UI to reuse the exact algorithm.
+
 ## [0.1.0-alpha.1] - 2026-07-04
 
 First release — the deep browser RUM SDK for `cboxdk/laravel-telemetry`.
@@ -27,5 +41,6 @@ First release — the deep browser RUM SDK for `cboxdk/laravel-telemetry`.
   auto-inits from its `<script data-*>` tag — the contract the Laravel
   package's `@telemetryBrowser` directive emits.
 
-[Unreleased]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/cboxdk/telemetry-browser/releases/tag/v0.1.0-alpha.1
