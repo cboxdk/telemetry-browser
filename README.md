@@ -63,7 +63,7 @@ same keys. Exported as `ATTR` for the UI to align against.
 | Device / client | `user_agent.original`, `browser.language`, `browser.viewport`, `network.connection.type`, `device.memory_gb` | page load |
 | Page timing | `browser.ttfb_ms`, `browser.fcp_ms`, `browser.dom_interactive_ms` | page load |
 | Web Vitals | `web_vital.name`, `web_vital.value`, `web_vital.rating` | vital markers |
-| Errors | `exception.type`, `exception.message`, `exception.file`, `exception.line`, `exception.stacktrace` | error spans |
+| Errors | `exception.type`, `exception.message`, `exception.file`, `exception.line`, `exception.column`, `exception.group`, `exception.stacktrace` | error spans |
 
 Span names are a small bounded set (`SPAN`): `browser.page_load`,
 `browser.route_change`, `browser.web_vital`, `exception`, plus
@@ -84,6 +84,53 @@ Span names are a small bounded set (`SPAN`): `browser.page_load`,
   `browser.route_change` spans.
 
 Toggle any of them via `instrument: { fetch: false, ... }`.
+
+## Source maps (symbolication)
+
+Minified stacks (`app-abc.js:1:2481`) group and read poorly, and the file
+names shift every deploy. Upload your build's source maps **keyed by the
+same `release`** you pass to `init({ release })`, and the backend resolves
+each browser stack back to original source/line/column/name on read — so
+frontend error grouping and detail get as good as the backend's.
+
+Upload from CI (which *can* hold the secret — the browser never does):
+
+```bash
+npx telemetry-sourcemaps \
+  --dir dist/assets --release "$GIT_SHA" \
+  --endpoint https://app.example.com/telemetry/sourcemaps \
+  --token "$TELEMETRY_SOURCEMAPS_TOKEN"
+```
+
+Or as a Vite plugin, so maps upload on every production build:
+
+```ts
+// vite.config.ts
+import { telemetrySourcemaps } from '@cboxdk/telemetry-browser/sourcemaps';
+
+export default defineConfig({
+  plugins: [
+    telemetrySourcemaps({
+      endpoint: 'https://app.example.com/telemetry/sourcemaps',
+      release: process.env.GIT_SHA,
+      token: process.env.TELEMETRY_SOURCEMAPS_TOKEN,
+    }),
+  ],
+});
+```
+
+The Laravel package enables the receiving endpoint with
+`TELEMETRY_SOURCEMAPS=true` + `TELEMETRY_SOURCEMAPS_TOKEN` (token-gated,
+secure by default) and symbolicates at read time via its `Symbolicator`
+service — see the
+[browser tracing guide](https://github.com/cboxdk/laravel-telemetry/blob/main/docs/production/browser-tracing.md#source-maps-symbolication).
+The uploader is Node-only and never enters the browser bundle. Maps stay
+private: they're resolved server-side on demand, never shipped to clients.
+
+Until maps exist for a release, browser errors still group — by
+`exception.group`, a **deploy-stable** fingerprint (`exception.type` + a
+normalized message, since minified `file:line` moves every build). Source
+maps make the *detail* readable; grouping works with or without them.
 
 ## Manual API
 
