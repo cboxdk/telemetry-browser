@@ -139,6 +139,7 @@ telemetry.record({ name: 'checkout.step', attributes: { step: 2 } });
 telemetry.error(err, { 'order.id': id });
 telemetry.setUser(user.id);          // after login
 telemetry.setAttributes({ team: 'acme' });
+telemetry.track('signup_completed', { plan: 'pro' }); // custom analytics event (needs analytics:true)
 telemetry.traceId();                 // correlate your own logs
 telemetry.flush();
 ```
@@ -154,6 +155,7 @@ telemetry.flush();
 | `session` | — | server-provided `session.id` to share one visit key (set by `@telemetryBrowser` when analytics is on) |
 | `attributes` | `{}` | extra global dimensions |
 | `sampleRate` | `1` | head sampling, decided once per page |
+| `analytics` | `false` | unsampled analytics channel: SPA page views, engagement, `track()` |
 | `instrument` | all on | per-instrumentation toggles |
 | `maxSpans` | `128` | buffer cap before a forced flush |
 

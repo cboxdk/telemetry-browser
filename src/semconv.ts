@@ -53,6 +53,14 @@ export const ATTR = {
   EXCEPTION_COLUMN: 'exception.column',
   EXCEPTION_GROUP: 'exception.group',
   EXCEPTION_STACKTRACE: 'exception.stacktrace',
+
+  // Analytics (on analytics.* events — the server stamps the routing markers).
+  REFERRER: 'http.request.header.referer', // aligned with the server page_view
+  DEVICE_PIXEL_RATIO: 'browser.dpr',
+  SCREEN: 'browser.screen',
+  ENGAGEMENT_VISIBLE_MS: 'engagement.visible_ms',
+  ENGAGEMENT_SCROLL_DEPTH: 'engagement.scroll_depth',
+  ROUTE_FROM: 'browser.route.from',
 } as const;
 
 /** Span names the SDK produces — a small, bounded, queryable set. */
@@ -62,4 +70,10 @@ export const SPAN = {
   WEB_VITAL: 'browser.web_vital',
   RESOURCE: 'browser.resource',
   EXCEPTION: 'exception',
+} as const;
+
+/** Analytics event names the SDK produces (server prefixes them `analytics.`). */
+export const EVENT = {
+  PAGE_VIEW: 'page_view',
+  ENGAGEMENT: 'engagement',
 } as const;

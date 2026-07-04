@@ -21,6 +21,20 @@ export interface WireSpan {
   status: SpanStatus;
 }
 
+/**
+ * An unsampled analytics event (page view, engagement, custom track). The
+ * server re-emits it as an OTLP log record with the analytics routing
+ * markers — never subject to trace sampling.
+ */
+export interface WireEvent {
+  name: string;
+  /** epoch milliseconds */
+  time: number;
+  sessionId?: string;
+  traceId?: string;
+  attributes: Attributes;
+}
+
 export interface InstrumentationConfig {
   documentLoad?: boolean;
   webVitals?: boolean;
@@ -68,6 +82,15 @@ export interface TelemetryConfig {
   /** Toggle individual auto-instrumentations. All on by default. */
   instrument?: InstrumentationConfig;
 
+  /**
+   * Enable the unsampled analytics channel — SPA page-view events,
+   * engagement (visible time + scroll depth) and the `track()` API, all
+   * emitted as events (never sampled away). Off unless set; the Laravel
+   * package's `@telemetryBrowser` turns it on (`data-analytics`) when
+   * `telemetry.analytics` is enabled.
+   */
+  analytics?: boolean;
+
   /** Local buffer cap before a forced flush. */
   maxSpans?: number;
 
@@ -85,6 +108,11 @@ export interface Telemetry {
   setUser(id: string | null): void;
   /** Add/replace global dimensions. */
   setAttributes(attributes: Attributes): void;
+  /**
+   * Record a custom analytics event (a conversion/goal) — unsampled, on the
+   * analytics event stream. No-op unless `analytics` is enabled.
+   */
+  track(name: string, properties?: Attributes): void;
   /** The active trace id, for correlating your own logs. */
   traceId(): string;
   /** Force a flush now. */

@@ -1,6 +1,6 @@
 {
   "name": "@cboxdk/telemetry-browser",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Deep browser RUM SDK for cboxdk/laravel-telemetry \u2014 page load, Web Vitals, fetch/XHR, errors and SPA routes, correlated with your backend traces.",
   "type": "module",
   "license": "MIT",

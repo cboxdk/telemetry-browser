@@ -1,3 +1,4 @@
+import { Analytics } from './analytics';
 import { Context } from './context';
 import { Exporter } from './exporter';
 import { instrumentDocumentLoad } from './instrumentations/documentLoad';
@@ -31,6 +32,9 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
   const exporter = new Exporter(config.endpoint, config.maxSpans ?? 128, config.debug ?? false);
   const tracer = new Tracer(context, exporter);
 
+  // The unsampled analytics channel (off unless enabled).
+  const analytics = config.analytics ? new Analytics(context, exporter) : undefined;
+
   const inst = config.instrument ?? {};
   const enabled = (v?: boolean) => v !== false;
 
@@ -47,7 +51,10 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
   if (enabled(inst.fetch)) guard(() => instrumentFetch(tracer));
   if (enabled(inst.xhr)) guard(() => instrumentXhr(tracer));
   if (enabled(inst.errors)) guard(() => instrumentErrors(tracer));
-  if (enabled(inst.navigation)) guard(() => instrumentNavigation(tracer));
+  // SPA navigations the server never sees also become unsampled page views.
+  if (enabled(inst.navigation)) {
+    guard(() => instrumentNavigation(tracer, analytics ? (_to, from) => analytics.pageView(from) : undefined));
+  }
 
   return {
     record: (span) => tracer.record({ start: now(), end: now(), ...span }),
@@ -70,6 +77,7 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
     },
     setUser: (id) => context.setUser(id),
     setAttributes: (a) => context.setAttributes(a),
+    track: (name, properties) => analytics?.track(name, properties),
     traceId: () => context.traceId,
     flush: () => exporter.flush(),
   };

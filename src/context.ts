@@ -12,6 +12,8 @@ import type { Attributes, TelemetryConfig } from './types';
 export class Context {
   readonly traceId: string;
   readonly rootSpanId: string;
+  /** The visit key — server-provided (data-session) or the per-tab default. */
+  readonly session: string;
 
   private extra: Attributes;
 
@@ -19,7 +21,14 @@ export class Context {
     const server = parseTraceparent(config.traceparent);
     this.traceId = server?.traceId ?? newTraceId();
     this.rootSpanId = server?.spanId ?? newSpanId();
+    this.session = config.session || sessionId();
     this.extra = { ...(config.attributes ?? {}) };
+  }
+
+  /** The current authenticated user id, if configured. */
+  user(): string | undefined {
+    const u = typeof this.config.user === 'function' ? this.config.user() : this.config.user;
+    return u ?? undefined;
   }
 
   setUser(id: string | null): void {
@@ -59,6 +68,8 @@ export class Context {
       [ATTR.USER_AGENT]: nav.userAgent,
       [ATTR.BROWSER_LANGUAGE]: nav.language,
       [ATTR.BROWSER_VIEWPORT]: `${window.innerWidth}x${window.innerHeight}`,
+      [ATTR.SCREEN]: `${window.screen?.width ?? 0}x${window.screen?.height ?? 0}`,
+      [ATTR.DEVICE_PIXEL_RATIO]: window.devicePixelRatio ?? 1,
       [ATTR.URL_FULL]: location.href,
     };
     if (nav.connection?.effectiveType) dims[ATTR.NETWORK_CONNECTION_TYPE] = nav.connection.effectiveType;

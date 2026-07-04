@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-07-04
+
+### Added
+
+- **Unsampled analytics channel** (`analytics: true`, or `data-analytics="1"`
+  from `@telemetryBrowser`). Emits *events* — never sampled away — to the
+  ingest endpoint's `events` key:
+  - **SPA page views** on `history` navigations (the server never sees them),
+    with `document.referrer` and the previous path.
+  - **Engagement** — visible time + scroll depth, summarised on page hide.
+  - **`track(name, properties)`** for custom conversions/goals.
+  - Screen size + `devicePixelRatio` device dimensions.
+
 ## [0.1.0-alpha.4] - 2026-07-04
 
 ### Added

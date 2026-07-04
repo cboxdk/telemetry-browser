@@ -7,7 +7,7 @@ import type { Tracer } from '../tracer';
  * route-change spans, timing each view. Turns a single-page app from one
  * page-load into a sequence of navigable "pages".
  */
-export function instrumentNavigation(tracer: Tracer): void {
+export function instrumentNavigation(tracer: Tracer, onChange?: (to: string, from: string) => void): void {
   const history = window.history;
   let from = location.pathname;
   let enteredAt = now();
@@ -28,6 +28,7 @@ export function instrumentNavigation(tracer: Tracer): void {
         [ATTR.HTTP_URL]: location.href,
       },
     });
+    onChange?.(to, from);
     from = to;
   };
 

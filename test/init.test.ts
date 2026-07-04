@@ -51,6 +51,41 @@ describe('init', () => {
     });
   });
 
+  it('emits track() as an unsampled analytics event in the events channel', () => {
+    const t = init({
+      endpoint: '/telemetry/spans',
+      session: 'visit-1',
+      analytics: true,
+      instrument: { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false },
+    })!;
+
+    t.track('signup_completed', { plan: 'pro' });
+    t.flush();
+
+    return new Response(beacon.mock.calls[0]![1]).text().then((raw) => {
+      const payload = JSON.parse(raw);
+      expect(payload.spans).toBeUndefined();          // analytics is NOT a span
+      expect(payload.events).toHaveLength(1);
+      const e = payload.events[0];
+      expect(e.name).toBe('signup_completed');
+      expect(e.sessionId).toBe('visit-1');            // shared visit key
+      expect(e.attributes.plan).toBe('pro');
+      expect(typeof e.time).toBe('number');
+    });
+  });
+
+  it('track() is a no-op when analytics is disabled', () => {
+    const t = init({
+      endpoint: '/x',
+      instrument: { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false },
+    })!;
+
+    t.track('should_not_emit');
+    t.flush();
+
+    expect(beacon).not.toHaveBeenCalled();
+  });
+
   it('records errors as exception spans', async () => {
     const t = init({ endpoint: '/x', instrument: { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false } })!;
     t.error(new TypeError('boom'));

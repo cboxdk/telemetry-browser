@@ -25,6 +25,7 @@ export * from './index';
     release: d.release,
     user: d.user,
     sampleRate: d.sample ? parseFloat(d.sample) : undefined,
+    analytics: d.analytics === '1',
     debug: d.debug === '1',
     instrument: {
       fetch: d.fetch !== '0',
