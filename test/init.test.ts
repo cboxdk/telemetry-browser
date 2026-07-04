@@ -35,6 +35,22 @@ describe('init', () => {
     });
   });
 
+  it('adopts a server-provided session id (shared visit key) over its own', () => {
+    const t = init({
+      endpoint: '/telemetry/spans',
+      session: 'srv-shared-session-id',
+      instrument: { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false },
+    })!;
+
+    t.record({ name: 'manual.thing' });
+    t.flush();
+
+    return new Response(beacon.mock.calls[0]![1]).text().then((raw) => {
+      const s = JSON.parse(raw).spans[0];
+      expect(s.attributes[ATTR.SESSION_ID]).toBe('srv-shared-session-id');
+    });
+  });
+
   it('records errors as exception spans', async () => {
     const t = init({ endpoint: '/x', instrument: { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false } })!;
     t.error(new TypeError('boom'));

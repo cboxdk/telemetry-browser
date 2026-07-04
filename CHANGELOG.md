@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-07-04
+
+### Added
+
+- **Shared `session.id` (analytics keystone).** A new `session` config
+  option (and `data-session` on the standalone `<script>`) lets the server
+  provide the visit's `session.id`; when set it overrides the SDK's own
+  per-tab id, so browser and server spans share ONE visit key. The Laravel
+  package's `@telemetryBrowser` directive emits it automatically when
+  `telemetry.analytics` is on.
+
 ## [0.1.0-alpha.3] - 2026-07-04
 
 ### Added

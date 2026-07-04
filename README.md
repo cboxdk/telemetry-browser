@@ -151,6 +151,7 @@ telemetry.flush();
 | `serviceName` / `environment` / `release` | — | identity dimensions |
 | `user` | — | id or `() => id` |
 | `traceparent` | — | server trace to root on |
+| `session` | — | server-provided `session.id` to share one visit key (set by `@telemetryBrowser` when analytics is on) |
 | `attributes` | `{}` | extra global dimensions |
 | `sampleRate` | `1` | head sampling, decided once per page |
 | `instrument` | all on | per-instrumentation toggles |

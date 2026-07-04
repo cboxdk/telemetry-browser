@@ -51,6 +51,14 @@ export interface TelemetryConfig {
    */
   traceparent?: string;
 
+  /**
+   * A server-provided `session.id` (the Laravel package's analytics
+   * keystone, propagated via `data-session`). When set, it overrides the
+   * SDK's own per-tab session id so browser and server spans share one visit
+   * key. When absent the SDK generates its own.
+   */
+  session?: string;
+
   /** Extra global dimensions stamped on every span (team, tenant, plan…). */
   attributes?: Attributes;
 

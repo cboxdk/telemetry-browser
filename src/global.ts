@@ -19,6 +19,7 @@ export * from './index';
   init({
     endpoint,
     traceparent: meta,
+    session: d.session,
     serviceName: d.service,
     environment: d.environment,
     release: d.release,

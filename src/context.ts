@@ -35,7 +35,10 @@ export class Context {
   dimensions(): Attributes {
     const dims: Attributes = {
       [ATTR.BROWSER]: true,
-      [ATTR.SESSION_ID]: sessionId(),
+      // A server-provided session id (the Laravel package's analytics
+      // keystone, propagated via data-session) wins, so browser and server
+      // spans share ONE visit key; otherwise the per-tab default.
+      [ATTR.SESSION_ID]: this.config.session || sessionId(),
       [ATTR.URL_PATH]: location.pathname,
       ...this.extra,
     };
