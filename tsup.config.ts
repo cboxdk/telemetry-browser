@@ -1,17 +1,9 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig([
-  // Library builds (ESM + CJS + types) for bundler/npm consumers.
-  {
-    entry: ['src/index.ts'],
-    format: ['esm', 'cjs'],
-    dts: true,
-    sourcemap: true,
-    clean: true,
-    treeshake: true,
-    minify: false,
-  },
-  // Standalone IIFE for a <script> tag / CDN — exposes window.Telemetry.
+  // Browser SDK — ESM + CJS + types.
+  { entry: ['src/index.ts'], format: ['esm', 'cjs'], dts: true, sourcemap: true, clean: true, treeshake: true },
+  // Standalone IIFE for a <script> tag / CDN — window.Telemetry.
   {
     entry: { telemetry: 'src/global.ts' },
     format: ['iife'],
@@ -20,5 +12,13 @@ export default defineConfig([
     sourcemap: true,
     minify: true,
     treeshake: true,
+  },
+  // Node build-tooling — the source map uploader + CLI (never in the browser bundle).
+  {
+    entry: { sourcemaps: 'src/sourcemaps.ts', cli: 'src/cli.ts' },
+    format: ['esm', 'cjs'],
+    platform: 'node',
+    dts: { entry: { sourcemaps: 'src/sourcemaps.ts' } },
+    clean: false,
   },
 ]);

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-07-04
+
+### Added
+
+- **Source map uploader** (`@cboxdk/telemetry-browser/sourcemaps` + the
+  `telemetry-sourcemaps` CLI): ships your build's `*.map` files to the
+  app's upload endpoint keyed by release, so the backend can symbolicate
+  minified browser stacks back to the original source. Node-only — never
+  in the browser bundle. Ships as a Vite plugin (`telemetrySourcemaps`)
+  and a CLI for other build pipelines.
+
 ## [0.1.0-alpha.2] - 2026-07-04
 
 ### Added
@@ -41,6 +52,7 @@ First release — the deep browser RUM SDK for `cboxdk/laravel-telemetry`.
   auto-inits from its `<script data-*>` tag — the contract the Laravel
   package's `@telemetryBrowser` directive emits.
 
-[Unreleased]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/cboxdk/telemetry-browser/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/cboxdk/telemetry-browser/releases/tag/v0.1.0-alpha.1
