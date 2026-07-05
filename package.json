@@ -1,14 +1,14 @@
 {
   "name": "@cboxdk/telemetry-browser",
   "version": "0.1.0-alpha.5",
-  "description": "Deep browser RUM SDK for cboxdk/laravel-telemetry \u2014 page load, Web Vitals, fetch/XHR, errors and SPA routes, correlated with your backend traces.",
+  "description": "Deep browser RUM SDK for cboxdk/laravel-telemetry — page load, Web Vitals, fetch/XHR, errors and SPA routes, correlated with your backend traces.",
   "type": "module",
   "license": "MIT",
   "author": "Sylvester Damgaard <sn@cbox.dk>",
   "homepage": "https://github.com/cboxdk/telemetry-browser",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cboxdk/telemetry-browser.git"
+    "url": "git+https://github.com/cboxdk/telemetry-browser.git"
   },
   "keywords": [
     "rum",
@@ -57,6 +57,6 @@
     "vitest": "^2.1.8"
   },
   "bin": {
-    "telemetry-sourcemaps": "./dist/cli.cjs"
+    "telemetry-sourcemaps": "dist/cli.cjs"
   }
 }
