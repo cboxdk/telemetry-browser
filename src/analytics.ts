@@ -36,7 +36,13 @@ export class Analytics {
 
   /** Emit a page-view event (SPA navigation, or an explicit one). */
   pageView(from?: string): void {
-    const attributes: Attributes = { [ATTR.URL_PATH]: location.pathname };
+    const attributes: Attributes = {
+      [ATTR.URL_PATH]: location.pathname,
+      // The full landing URL (with its query) so the server can derive
+      // campaign attribution (analytics.utm.* / analytics.click_id) — the
+      // query lives client-side, this ingest request's own URL is not it.
+      [ATTR.URL_FULL]: location.href,
+    };
     if (document.referrer) attributes[ATTR.REFERRER] = document.referrer;
     if (from) attributes[ATTR.ROUTE_FROM] = from;
     this.emit(EVENT.PAGE_VIEW, attributes);

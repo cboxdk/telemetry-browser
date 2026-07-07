@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6] - 2026-07-07
+
+### Added
+
+- **Analytics page views now send `url.full`** (`location.href`) alongside
+  `url.path`, so the server can parse UTM campaign tags (`utm_*`) and ad
+  click-ids from the landing URL. Pairs with `cboxdk/laravel-telemetry` 0.3.0's
+  `telemetry.analytics.utm` capture — no query string is stored on the path.
+
 ## [0.1.0-alpha.5] - 2026-07-04
 
 ### Added
