@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-07
+
+First **stable** release — graduates the SDK out of the `0.1.0-alpha` line; the
+API is now considered stable under SemVer and publishes to the npm `latest` tag.
+No functional change since `0.1.0-alpha.6` (which added `url.full` on analytics
+events so the server can parse UTM campaign tags and ad click-ids).
+
 ## [0.1.0-alpha.6] - 2026-07-07
 
 ### Added
