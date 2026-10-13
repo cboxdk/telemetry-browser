@@ -7,6 +7,8 @@ import type { Attributes, TelemetryConfig } from './types';
 export interface Scope {
   traceId: string;
   parentSpanId: string;
+  /** The upstream sampling decision, carried on propagated traceparents. */
+  sampled: boolean;
 }
 
 /**
@@ -24,6 +26,8 @@ export class Context {
   traceId: string;
   /** The span new browser spans parent to by default (the active page's server span). */
   rootSpanId: string;
+  /** The server's sampling decision for the active trace (true when the browser started it). */
+  sampled: boolean;
   /** The trace the document itself was loaded under — page-load + Web Vitals stay here. */
   readonly initial: Scope;
   /** The span id of the soft navigation in flight, if any (set by the navigation instrumentation). */
@@ -37,7 +41,8 @@ export class Context {
     const server = parseTraceparent(config.traceparent);
     this.traceId = server?.traceId ?? newTraceId();
     this.rootSpanId = server?.spanId ?? newSpanId();
-    this.initial = { traceId: this.traceId, parentSpanId: this.rootSpanId };
+    this.sampled = server?.sampled ?? true;
+    this.initial = { traceId: this.traceId, parentSpanId: this.rootSpanId, sampled: this.sampled };
     this.session = config.session || sessionId();
     this.extra = { ...(config.attributes ?? {}) };
   }
@@ -48,13 +53,18 @@ export class Context {
    * Capture it when work starts — a navigation may rebase before it ends.
    */
   scope(): Scope {
-    return { traceId: this.traceId, parentSpanId: this.navigationSpanId ?? this.rootSpanId };
+    return {
+      traceId: this.traceId,
+      parentSpanId: this.navigationSpanId ?? this.rootSpanId,
+      sampled: this.sampled,
+    };
   }
 
   /** Move the active page trace (a soft navigation landed on a new server page). */
-  rebase(traceId: string, parentSpanId: string): void {
+  rebase(traceId: string, parentSpanId: string, sampled = this.sampled): void {
     this.traceId = traceId;
     this.rootSpanId = parentSpanId;
+    this.sampled = sampled;
   }
 
   /** The current authenticated user id, if configured. */

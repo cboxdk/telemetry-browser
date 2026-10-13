@@ -36,4 +36,40 @@ describe('fetch instrumentation', () => {
     const headers = new Headers(init2?.headers);
     expect(headers.get('traceparent')).toBeNull();
   });
+
+  const header = (call = 0) =>
+    new Headers((underlying.mock.calls[call]![1] as RequestInit | undefined)?.headers).get('traceparent');
+  const off = { documentLoad: false, webVitals: false, xhr: false, errors: false, navigation: false };
+
+  it('does not leak traceparent to protocol-relative or look-alike hosts', async () => {
+    init({ endpoint: '/x', instrument: off });
+    await window.fetch('//other.example/x');
+    await window.fetch(`${location.origin}.evil.example/x`);
+    expect(header(0)).toBeNull();
+    expect(header(1)).toBeNull();
+  });
+
+  it('propagates to a relative same-origin path without a leading slash', async () => {
+    init({ endpoint: '/x', instrument: off });
+    await window.fetch('api/orders');
+    expect(header(0)).not.toBeNull();
+  });
+
+  it('carries the server\'s unsampled decision instead of forcing -01', async () => {
+    init({ endpoint: '/x', traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00', instrument: off });
+    await window.fetch('/api/x');
+    expect(header(0)).toMatch(/^00-0af7651916cd43dd8448eb211c80319c-[0-9a-f]{16}-00$/);
+  });
+
+  it('a second init() does not wrap fetch twice', async () => {
+    const first = init({ endpoint: '/x', instrument: off })!;
+    const second = init({ endpoint: '/x', instrument: off })!;
+    await window.fetch('/api/once');
+    first.flush();
+    second.flush();
+    const spans = beacon.mock.calls.flatMap((c) => JSON.parse(c[1] as string).spans ?? []);
+    expect(spans.filter((s: { name: string }) => s.name === 'fetch GET')).toHaveLength(1);
+    expect(underlying).toHaveBeenCalledTimes(1);
+  });
 });
+

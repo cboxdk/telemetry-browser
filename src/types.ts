@@ -133,7 +133,11 @@ export interface Telemetry {
    * analytics event stream. No-op unless `analytics` is enabled.
    */
   track(name: string, properties?: Attributes): void;
-  /** The active trace id, for correlating your own logs. */
+  /**
+   * The active trace id, for correlating your own logs. Follows soft
+   * navigations: after Livewire/Inertia lands on a new server trace, this
+   * is that trace.
+   */
   traceId(): string;
   /** Force a flush now. */
   flush(): void;

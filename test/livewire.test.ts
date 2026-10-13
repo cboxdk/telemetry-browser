@@ -45,10 +45,26 @@ const sent = (): { spans: WireSpan[]; events: WireEvent[] } => {
 const headerOf = (call: number): string | null =>
   new Headers((underlying.mock.calls[call]![1] as RequestInit | undefined)?.headers).get('traceparent');
 
-/** What Livewire's navigateTo() does, in order. */
-async function wireNavigate(to: string, { meta, cached = false, history = false }: { meta?: string | null; cached?: boolean; history?: boolean } = {}) {
+/**
+ * What Livewire does, in order. A `wire:navigate` link click fetches the
+ * page on MOUSEDOWN and fires livewire:navigate on release (`click`), so the
+ * fetch comes first. `Livewire.navigate()` and an uncached back/forward
+ * fetch after the event (`programmatic`).
+ */
+async function wireNavigate(
+  to: string,
+  {
+    meta,
+    cached = false,
+    history = false,
+    programmatic = false,
+  }: { meta?: string | null; cached?: boolean; history?: boolean; programmatic?: boolean } = {},
+) {
+  const fetchPage = () => window.fetch(to, { headers: { 'X-Livewire-Navigate': '1' } });
+  const click = !cached && !programmatic && !history;
+  if (click) await fetchPage(); // mousedown prefetch
   fire('livewire:navigate', { url: new URL(to, location.origin), history, cached }, true);
-  if (!cached) await window.fetch(to, { headers: { 'X-Livewire-Navigate': '1' } });
+  if (!cached && !click) await fetchPage();
   fire('livewire:navigating', { onSwap: () => {} });
   history ? window.history.replaceState({}, '', to) : window.history.pushState({}, '', to);
   if (meta !== undefined) setMeta(meta); // the head swap brings the new page's meta
@@ -82,6 +98,17 @@ describe('Livewire wire:navigate', () => {
     underlying.mockClear();
   });
 
+  it('leaves generic history tracking alone until a real livewire:navigate', async () => {
+    // The initial-load livewire:navigated fired in beforeAll, as on every
+    // Livewire page — it must not silence pushState tracking.
+    window.history.pushState({}, '', '/plain-push');
+    await Promise.resolve();
+    window.history.replaceState({}, '', '/start');
+    await Promise.resolve();
+
+    expect(sent().spans.filter((s) => s.name === SPAN.ROUTE_CHANGE)).toHaveLength(2);
+  });
+
   it('records one navigation span and adopts the new page meta for later requests', async () => {
     await wireNavigate('/orders', { meta: `00-${NEXT_TRACE}-${NEXT_SPAN}-01` });
     await window.fetch('/api/orders');
@@ -101,10 +128,11 @@ describe('Livewire wire:navigate', () => {
     expect(n.attributes[ATTR.URL_PATH]).toBe('/orders');
     expect(typeof n.attributes[ATTR.NAVIGATION_FETCH_MS]).toBe('number');
 
-    // The page fetch is a child of the navigation, still in the old trace…
+    // A link click fetched the page on mousedown, before the navigation
+    // began — so that fetch is NOT under the navigation span…
     const pageFetch = spans.find((s) => s.attributes[ATTR.HTTP_URL] === '/orders')!;
     expect(pageFetch.traceId).toBe(PAGE_TRACE);
-    expect(pageFetch.parentSpanId).toBe(n.spanId);
+    expect(pageFetch.parentSpanId).toBe(PAGE_SPAN);
     expect(headerOf(0)).toBe(`00-${PAGE_TRACE}-${pageFetch.spanId}-01`);
 
     // …and the request made on the NEW page joins the new server trace.
@@ -178,4 +206,27 @@ describe('Livewire wire:navigate', () => {
       vi.useRealTimers();
     }
   });
+
+  it('puts the page fetch under the navigation when it starts after it (Livewire.navigate())', async () => {
+    await wireNavigate('/programmatic', { programmatic: true, meta: `00-${PAGE_TRACE}-${PAGE_SPAN}-01` });
+
+    const { spans } = sent();
+    const n = spans.find((s) => s.name === SPAN.NAVIGATION)!;
+    const pageFetch = spans.find((s) => s.attributes[ATTR.HTTP_URL] === '/programmatic')!;
+    expect(pageFetch.parentSpanId).toBe(n.spanId);
+  });
+
+  it('does not adopt an unsampled page meta; later requests hang off the navigation', async () => {
+    const before = t.traceId();
+    await wireNavigate('/unsampled', { meta: `00-${NEXT_TRACE}-${'1'.repeat(16)}-00` });
+    await window.fetch('/api/after-unsampled');
+
+    const { spans } = sent();
+    const n = spans.find((s) => s.name === SPAN.NAVIGATION)!;
+    expect(n.attributes[ATTR.NAVIGATION_TRACE_SOURCE]).toBe('navigation');
+    const later = spans.find((s) => s.attributes[ATTR.HTTP_URL] === '/api/after-unsampled')!;
+    expect(later.traceId).toBe(before);
+    expect(later.parentSpanId).toBe(n.spanId);
+  });
 });
+

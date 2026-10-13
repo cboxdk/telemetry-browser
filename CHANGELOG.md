@@ -19,20 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `instrument.serverTiming: false` (`data-server-timing="0"`). Adds about
   0.7 KB gzipped to the standalone build.
 
-- **Livewire `wire:navigate` and Inertia soft navigations.** Each one becomes
-  a single `browser.navigation` span, from `livewire:navigate` to
-  `livewire:navigated` or from `inertia:start` to `inertia:finish`. It records
-  the framework, outcome, the previous path and back/forward/cached flags, and
-  the page request is its child. Once a framework is seen, the generic
-  `history` handler stops recording, so a navigation isn't counted twice
-  (spans or analytics page views). Turn it off with
-  `instrument.frameworks: false`.
+- **Livewire 3/4 `wire:navigate` and Inertia v1/v2/v3 soft navigations.**
+  Each one becomes a single `browser.navigation` span, from
+  `livewire:navigate` to `livewire:navigated` or from `inertia:start` to
+  `inertia:finish`. It records the framework, outcome, the previous path and
+  back/forward/cached flags. A page request that starts during the
+  navigation is its child; Livewire link clicks fetch on mousedown, before
+  the navigation starts, so theirs usually isn't. Once a framework actually
+  navigates, the generic `history` handler stops recording, so a navigation
+  isn't counted twice (spans or analytics page views). Turn it off with
+  `instrument.frameworks: false`. Adds about 1.8 KB gzipped to the
+  standalone build (now ~9.5 KB in total).
 - **Later requests join the new page's trace.** After a Livewire navigation
   the SDK adopts the swapped-in `<meta name="traceparent">`. After an Inertia
   visit it adopts a `traceresponse` header if there is one; otherwise later
   requests parent to the navigation span. If `X-Trace-Id` shows the server
   started a different trace, the trace stays as it is and the server's id is
-  recorded. New `traceIdHeader` option (`data-trace-header`).
+  recorded. A server span whose sampled flag is `00` is never adopted. New
+  `traceIdHeader` option (`data-trace-header`).
 
 ### Changed
 
@@ -42,7 +46,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trace.
 - The standalone build initialises once per document. A second run of the
   script (for example from Livewire re-running `<body>` scripts) does
-  nothing.
+  nothing. A second ESM `init()` no longer wraps fetch/XHR again.
+- `telemetry.traceId()` now follows soft navigations: it returns the trace
+  later requests join, not always the document's original one.
+- Propagated `traceparent` headers carry the server's sampling flag (from
+  the page's traceparent) instead of always `01`.
+
+### Fixed
+
+- `parseTraceparent` rejects all-zero trace and span ids, which W3C defines
+  as invalid.
+- `Server-Timing` parsing ignores durations with trailing junk (`dur=12abc`)
+  or a minus sign, and skips headers longer than 4096 characters.
+
+### Security
+
+- **traceparent no longer leaks to other origins.** The same-origin check
+  was a string prefix, so `//other.example/x` and
+  `https://app.example.com.evil.example/` (for an app on
+  `https://app.example.com`) got the header. It now compares the resolved
+  origin exactly. Relative paths without a leading slash (`api/x`) now
+  count as same-origin, which they are.
 
 ## [0.2.0] - 2026-07-07
 

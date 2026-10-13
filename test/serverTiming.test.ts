@@ -37,6 +37,16 @@ describe('parseServerTiming', () => {
     expect(parseServerTiming('')).toEqual([]);
     expect(parseServerTiming(' , ;dur=1, ok')).toEqual([{ name: 'ok', duration: 0, description: '' }]);
   });
+
+  it('rejects trailing junk and negative durations, and skips oversized headers', () => {
+    expect(parseServerTiming('a;dur=12abc, b;dur=-5, c;dur=.5, d;dur="7"')).toEqual([
+      { name: 'a', duration: 0, description: '' },
+      { name: 'b', duration: 0, description: '' },
+      { name: 'c', duration: 0.5, description: '' },
+      { name: 'd', duration: 7, description: '' },
+    ]);
+    expect(parseServerTiming(`app;dur=1, ${'x'.repeat(5000)}`)).toEqual([]);
+  });
 });
 
 describe('serverTimingAttributes', () => {

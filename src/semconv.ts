@@ -67,8 +67,8 @@ export const ATTR = {
   NAVIGATION_OUTCOME: 'browser.navigation.outcome', // completed | cancelled | interrupted | timeout
   NAVIGATION_HISTORY: 'browser.navigation.history', // back/forward, not a link click
   NAVIGATION_CACHED: 'browser.navigation.cached', // restored from the framework's cache, no server request
-  NAVIGATION_FETCH_MS: 'browser.navigation.fetch_ms', // Livewire: start → page HTML in hand (rest is swap)
-  // Where later spans parent after this navigation: meta | traceresponse | trace_id_header | none.
+  NAVIGATION_FETCH_MS: 'browser.navigation.fetch_ms', // Livewire: navigate → page HTML in hand; a lower bound (fetch may start on mousedown)
+  // Where later spans parent after this navigation: meta | traceresponse | navigation | none.
   NAVIGATION_TRACE_SOURCE: 'browser.navigation.trace_source',
   // The server's trace id for the navigation request, when it is NOT this trace (not adopted).
   NAVIGATION_SERVER_TRACE_ID: 'browser.navigation.server_trace_id',

@@ -7,7 +7,7 @@ shipped to your app's ingest endpoint and joined to the backend trace via
 W3C `traceparent`. One trace id, one waterfall: **click → browser span →
 request span → queries → jobs.**
 
-- ~6 KB gzipped (Web Vitals included), zero config to get started.
+- ~9.5 KB gzipped (Web Vitals included), zero config to get started.
 - No `@opentelemetry/*` — a lean, tailored SDK that matches the ingest
   endpoint exactly and emits the **same dimensions as the backend**, so
   `cboxdk/laravel-telemetry-ui` cross-links frontend and backend out of
@@ -94,26 +94,31 @@ Toggle any of them via `instrument: { fetch: false, ... }`.
 ## Livewire & Inertia soft navigations
 
 Detected automatically from the frameworks' own events; nothing to
-configure. Once a framework is seen it owns navigation, and the generic
-`history` handler stops recording, so a navigation is never counted twice
-(the framework's own `pushState` would otherwise look like a second one).
+configure. Once a framework actually navigates (a `livewire:navigate`, or
+any Inertia router event), it owns navigation and the generic `history`
+handler stops recording, so a navigation is never counted twice (the
+framework's own `pushState` would otherwise look like a second one). A
+Livewire page that never uses `wire:navigate` keeps generic tracking.
 
-| | Livewire 3 (`wire:navigate`) | Inertia v1 / v2 |
+| | Livewire 3 / 4 (`wire:navigate`) | Inertia v1 / v2 / v3 |
 |---|---|---|
 | Span starts | `livewire:navigate` | `inertia:start` |
 | Span ends | `livewire:navigated` | `inertia:finish` |
-| Back/forward | `livewire:navigate` with `history: true` | `inertia:navigate` without a visit |
-| Ignored | a `livewire:navigate` another listener prevented | prefetches, `async` visits, partial reloads (`only`/`except`) of the current page |
+| Failed | no finish event: closed as `timeout` after 30 s | `inertia:exception`/`invalid` (v1/v2), `inertia:httpException`/`networkError` (v3) |
+| Back/forward | `livewire:navigate` with `history: true` | `inertia:navigate` without a visit, right after a `popstate` |
+| Prefetch-cache click | the navigation itself; the fetch happened earlier | `inertia:navigate` without a visit (`cached`) |
+| Ignored | a `livewire:navigate` another listener prevented | prefetches, `async` visits, `router.reload()`, partial reloads (`only`/`except`/`reset`) of the current page |
 
 Each `browser.navigation` span carries `browser.navigation.framework`,
 `browser.navigation.outcome` (`completed`/`cancelled`/`interrupted`, or
 `timeout` when no finish event came within 30 s, e.g. a failed Livewire fetch),
 `browser.route.from`, `url.path`/`http.url` of the new page,
 `browser.navigation.history`, `browser.navigation.cached`, and for Livewire
-`browser.navigation.fetch_ms` (time until the page HTML was in hand; the
-rest is the swap). An analytics page view is emitted once per completed
-navigation that changed the path. The request that fetched the page is a
-child of the navigation span.
+`browser.navigation.fetch_ms` (from `livewire:navigate` until the page HTML
+was in hand; the rest is the swap). An analytics page view is emitted once
+per completed navigation that changed the path. A page request that starts
+*during* the navigation is its child. Inertia visits work that way;
+Livewire link clicks usually don't (see Limits).
 
 **Which trace later requests join** (recorded as
 `browser.navigation.trace_source`):
@@ -127,20 +132,31 @@ child of the navigation span.
   - `traceresponse` — a W3C `traceresponse` header on the page response is
     adopted (trace and span id).
   - `navigation` — otherwise, later requests parent to the navigation span
-    itself, in the same trace. The page request carried our `traceparent`,
+    itself, in the same trace. This is also the fallback for Livewire when
+    the new page has no meta. The page request carried our `traceparent`,
     so a backend that continues incoming traces (laravel-telemetry's
     default) put its request span under that navigation too.
   - `none` — if the `X-Trace-Id` header (`traceIdHeader`; laravel-telemetry's
     `traces.response_header`) shows the server started a *different* trace,
     the SDK can't join it without a span id. The trace stays put and the
     server's id is recorded as `browser.navigation.server_trace_id`.
+- A meta or `traceresponse` whose sampled flag is `00` is not adopted: the
+  server didn't record that span, so children would hang off nothing. The
+  navigation span is used instead. Propagated `traceparent` headers carry
+  the server's sampling flag rather than always `01`.
 - Cached restores, cancelled/interrupted/failed visits never move the trace.
+- `telemetry.traceId()` follows: it returns the active trace after a soft
+  navigation moved it.
 
 Limits:
 
-- A page Livewire prefetched (`wire:navigate.hover`, or on mousedown) is
-  fetched *before* `livewire:navigate`, so that fetch span is not under the
-  navigation span. The new meta is still adopted.
+- Livewire fetches a link's page on **mousedown** (or on hover with
+  `wire:navigate.hover`) and fires `livewire:navigate` only on release. For
+  link clicks the page request therefore usually starts *before* the
+  navigation span and is not its child, and `fetch_ms` is a lower bound on
+  the fetch time. The new meta is still adopted. `Livewire.navigate()` and
+  uncached back/forward fetch after the event, so there the request is a
+  child.
 - A Livewire cached back/forward restore leaves later requests on the trace
   you navigated away from, not the restored page's old one: that page's
   server span ended long ago.

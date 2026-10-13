@@ -27,9 +27,28 @@ interface Pending {
   /** The response that fetched the new page, if the network instrumentation saw it. */
   response?: ObservedResponse;
   failed?: boolean;
-  /** The Inertia visit object (stable across its start/finish events). */
-  visit?: unknown;
+  /** The Inertia visit as `inertia:start` gave it (v1 finishes with a copy). */
+  visit?: Visit;
+  timer?: ReturnType<typeof setTimeout>;
 }
+
+/** The fields of an Inertia visit we read (v1, v2 and v3 share them). */
+type Visit = {
+  url?: unknown;
+  method?: string;
+  prefetch?: boolean;
+  async?: boolean;
+  only?: unknown[];
+  except?: unknown[];
+  /** v3: props to reset — a partial reload like only/except. */
+  reset?: unknown[];
+  completed?: boolean;
+  cancelled?: boolean;
+  interrupted?: boolean;
+};
+
+/** A popstate this recent before an `inertia:navigate` makes it back/forward. */
+const POPSTATE_WINDOW_MS = 1_000;
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
 
@@ -48,8 +67,9 @@ const metaTraceparent = (): string | null =>
  * First-class soft navigations for Livewire (`wire:navigate`) and Inertia.
  *
  * Each navigation becomes ONE `browser.navigation` span from the framework's
- * start event to its finish event; fetch/XHR started during it (the page
- * request itself) are its children. Once a framework is seen it owns
+ * start event to its finish event; fetch/XHR started during it are its
+ * children (Inertia's page request; Livewire's only when it isn't already
+ * in flight from mousedown). Once a framework actually navigates it owns
  * navigation, and the generic history handler stops recording, so the
  * framework's own pushState is never counted twice.
  *
@@ -81,8 +101,6 @@ export function instrumentFrameworkNavigation(
   let lastPath = location.pathname;
   let poppedAt = 0;
 
-  if ((window as unknown as { Livewire?: unknown }).Livewire) state.owner = 'livewire';
-
   const begin = (framework: Framework, init: Omit<Pending, 'framework' | 'id' | 'start' | 'scope' | 'fromPath'>, start = now()) => {
     if (pending) finish(pending, 'interrupted');
     // The navigation's own parent is whatever was active before it opened.
@@ -93,32 +111,35 @@ export function instrumentFrameworkNavigation(
     const p = pending;
     // Without this, a failed Livewire fetch would leave every later span
     // parented to a navigation span that is never recorded.
-    setTimeout(() => finish(p, 'timeout'), NAVIGATION_TIMEOUT_MS);
+    p.timer = setTimeout(() => finish(p, 'timeout'), NAVIGATION_TIMEOUT_MS);
     return p;
   };
 
   const drop = (p: Pending) => {
     if (pending !== p) return;
+    clearTimeout(p.timer);
     pending = undefined;
     context.navigationSpanId = undefined;
   };
 
   /** Move the active trace to the page this navigation landed on. Returns the source used. */
   const follow = (p: Pending, attributes: Attributes): string => {
+    // A server span is only adopted when the server SAMPLED it (flag 01):
+    // an unsampled span is never exported, so children would hang off nothing.
     if (p.framework === 'livewire') {
       const meta = metaTraceparent();
       const parsed = meta !== lastMeta ? parseTraceparent(meta) : null;
       lastMeta = meta;
-      if (parsed) {
-        context.rebase(parsed.traceId, parsed.spanId);
+      if (parsed?.sampled) {
+        context.rebase(parsed.traceId, parsed.spanId, true);
         return 'meta';
       }
     }
 
     const res = p.response;
     const traceresponse = parseTraceparent(res?.header('traceresponse'));
-    if (traceresponse) {
-      context.rebase(traceresponse.traceId, traceresponse.spanId);
+    if (traceresponse?.sampled) {
+      context.rebase(traceresponse.traceId, traceresponse.spanId, true);
       return 'traceresponse';
     }
 
@@ -180,10 +201,14 @@ export function instrumentFrameworkNavigation(
     poppedAt = now();
   });
 
-  // ---- Livewire 3 (wire:navigate) -------------------------------------
+  // ---- Livewire 3 / 4 (wire:navigate) ---------------------------------
   // livewire:navigate (cancelable; detail {url, history, cached}) →
   // livewire:navigating → swap → livewire:navigated. navigated also fires
-  // once on the initial page load (no navigation pending — ignored).
+  // once on the initial page load (no navigation pending — ignored), and on
+  // any Livewire page, used or not — so ownership is taken only by an actual
+  // livewire:navigate. A link's page is fetched on mousedown, BEFORE
+  // livewire:navigate (click release), so that fetch is usually not under
+  // the navigation span, and fetch_ms is a lower bound.
 
   document.addEventListener('livewire:navigate', (e: Event) => {
     state.owner = 'livewire';
@@ -212,36 +237,46 @@ export function instrumentFrameworkNavigation(
   });
 
   document.addEventListener('livewire:navigated', () => {
-    state.owner = 'livewire';
     if (pending?.framework === 'livewire') finish(pending, 'completed');
   });
 
-  // ---- Inertia v1 / v2 (router events on document as inertia:*) --------
+  // ---- Inertia v1 / v2 / v3 (router events on document as inertia:*) ---
   // inertia:start {visit} → request → inertia:navigate {page} →
   // inertia:success → inertia:finish {visit: completed|cancelled|interrupted}.
-  // History (back/forward) restores fire only inertia:navigate. v2 may not
-  // fire finish for a cancelled visit — the next start interrupts it.
+  // A cancelled or interrupted visit still fires finish with that flag; a
+  // new start closes anything left open. Without a start: back/forward
+  // restores and (v2/v3) clicks served from the prefetch cache fire only
+  // inertia:navigate (v3 marks the latter `cached`).
 
-  type Visit = {
-    url?: unknown;
-    method?: string;
-    prefetch?: boolean;
-    async?: boolean;
-    only?: unknown[];
-    except?: unknown[];
-    completed?: boolean;
-    cancelled?: boolean;
-    interrupted?: boolean;
+  /** Visits that are data refreshes or background work, not navigations. */
+  const ignored = (visit: Visit): boolean => {
+    if (visit.prefetch || visit.async) return true;
+    let to: URL;
+    try {
+      to = new URL(String(visit.url), location.href);
+    } catch {
+      return false;
+    }
+    if (to.pathname !== location.pathname) return false;
+    // Partial reload (only/except, v3 reset) of the current page, or a
+    // router.reload() — a GET to exactly the current URL.
+    const partial = (visit.only?.length ?? 0) > 0 || (visit.except?.length ?? 0) > 0 || (visit.reset?.length ?? 0) > 0;
+    const reload = String(visit.method ?? 'get').toLowerCase() === 'get' && to.search === location.search;
+    return partial || reload;
   };
+
+  /** v1 finishes with a COPY of the visit, so identity alone can't match. */
+  const sameVisit = (a: Visit | undefined, b: Visit): boolean =>
+    a === b ||
+    (!!a &&
+      pathOf(a.url) === pathOf(b.url) &&
+      String(a.method ?? 'get').toLowerCase() === String(b.method ?? 'get').toLowerCase());
 
   document.addEventListener('inertia:start', (e: Event) => {
     state.owner = 'inertia';
     const visit = (e as CustomEvent<{ visit?: Visit } | undefined>).detail?.visit;
-    if (!visit || visit.prefetch || visit.async) return;
+    if (!visit || ignored(visit)) return;
     const toPath = pathOf(visit.url);
-    // A partial reload of the current page is a data refresh, not a navigation.
-    const partial = (visit.only?.length ?? 0) > 0 || (visit.except?.length ?? 0) > 0;
-    if (partial && toPath === location.pathname) return;
 
     const attributes: Attributes = {};
     if (visit.method) attributes[ATTR.HTTP_METHOD] = String(visit.method).toUpperCase();
@@ -251,25 +286,35 @@ export function instrumentFrameworkNavigation(
   const markFailed = () => {
     if (pending?.framework === 'inertia') pending.failed = true;
   };
-  document.addEventListener('inertia:exception', markFailed);
-  document.addEventListener('inertia:invalid', markFailed);
+  // v1/v2 name the failures exception/invalid; v3 httpException/networkError.
+  for (const name of ['exception', 'invalid', 'httpException', 'networkError']) {
+    document.addEventListener(`inertia:${name}`, markFailed);
+  }
 
   document.addEventListener('inertia:finish', (e: Event) => {
     state.owner = 'inertia';
     const visit = (e as CustomEvent<{ visit?: Visit } | undefined>).detail?.visit;
     const p = pending;
-    if (!p || p.framework !== 'inertia' || p.visit !== visit || !visit) return;
+    if (!p || p.framework !== 'inertia' || !visit || visit.prefetch || visit.async) return;
+    if (!sameVisit(p.visit, visit)) return;
     finish(p, visit.cancelled ? 'cancelled' : visit.interrupted ? 'interrupted' : 'completed');
   });
 
-  document.addEventListener('inertia:navigate', () => {
+  document.addEventListener('inertia:navigate', (e: Event) => {
     state.owner = 'inertia';
     if (pending?.framework === 'inertia') return; // the visit's finish records it
     if (location.pathname === lastPath) return; // the initial page, or same page
 
-    // Back/forward: Inertia restores the page from history state, no request.
-    const start = poppedAt && now() - poppedAt < 10_000 ? poppedAt : now();
-    const p = begin('inertia', { fetches: false, attributes: { [ATTR.NAVIGATION_HISTORY]: true } }, start);
+    // No request of ours: back/forward (restored from history state) if a
+    // popstate just happened, else a click served from the prefetch cache.
+    const history = poppedAt > 0 && now() - poppedAt < POPSTATE_WINDOW_MS;
+    const cached = (e as CustomEvent<{ cached?: boolean } | undefined>).detail?.cached === true || !history;
+    const p = begin(
+      'inertia',
+      { fetches: false, attributes: { [ATTR.NAVIGATION_HISTORY]: history, [ATTR.NAVIGATION_CACHED]: cached } },
+      history ? poppedAt : now(),
+    );
+    poppedAt = 0;
     finish(p, 'completed');
   });
 }

@@ -1,8 +1,10 @@
-import { buildTraceparent, spanId } from '../ids';
+import { buildTraceparent, isSameOrigin, spanId } from '../ids';
 import { ATTR } from '../semconv';
 import { parseServerTiming, serverTimingAttributes } from '../serverTiming';
 import { now } from '../tracer';
 import type { Tracer } from '../tracer';
+
+type Wrapped = typeof fetch & { __cboxTelemetry?: boolean };
 
 /**
  * Instruments fetch: a client span per call, and — for SAME-ORIGIN calls
@@ -12,13 +14,13 @@ import type { Tracer } from '../tracer';
  * is only readable when the server exposes it (Access-Control-Expose-Headers).
  */
 export function instrumentFetch(tracer: Tracer, serverTiming = true): void {
-  if (!window.fetch) return;
+  if (!window.fetch || (window.fetch as Wrapped).__cboxTelemetry) return; // a second init() must not double-wrap
   const original = window.fetch.bind(window);
 
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const wrapped: Wrapped = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-    const sameOrigin = url.startsWith('/') || url.startsWith(location.origin);
+    const sameOrigin = isSameOrigin(url);
     const id = spanId();
     const start = now();
     // Captured now: a soft navigation may move the active trace before this ends.
@@ -27,7 +29,7 @@ export function instrumentFetch(tracer: Tracer, serverTiming = true): void {
     let opts = init;
     if (sameOrigin) {
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-      headers.set('traceparent', buildTraceparent(scope.traceId, id));
+      headers.set('traceparent', buildTraceparent(scope.traceId, id, scope.sampled));
       opts = { ...init, headers };
     }
 
@@ -82,4 +84,6 @@ export function instrumentFetch(tracer: Tracer, serverTiming = true): void {
       },
     );
   };
+  wrapped.__cboxTelemetry = true;
+  window.fetch = wrapped;
 }

@@ -14,6 +14,10 @@ export interface ServerTimingEntry {
 const MAX_ENTRIES = 10;
 const MAX_NAME = 64;
 const MAX_DESCRIPTION = 256;
+/** Longer headers are not parsed at all — a hostile or runaway value costs nothing. */
+const MAX_HEADER = 4096;
+/** A non-negative decimal number, nothing trailing (`12abc` is not a duration). */
+const DURATION = /^\d+(?:\.\d+)?$|^\.\d+$/;
 
 /**
  * Parse a `Server-Timing` header value
@@ -23,7 +27,7 @@ const MAX_DESCRIPTION = 256;
  */
 export function parseServerTiming(header: string | null | undefined): ServerTimingEntry[] {
   const out: ServerTimingEntry[] = [];
-  if (!header) return out;
+  if (!header || header.length > MAX_HEADER) return out;
 
   // Split into metrics and their params, honouring quoted strings.
   const metrics: string[][] = [];
@@ -61,8 +65,11 @@ export function parseServerTiming(header: string | null | undefined): ServerTimi
       // The spec keeps the first occurrence of each param.
       if (key === 'dur' && !dur) {
         dur = true;
-        const n = parseFloat(value);
-        if (Number.isFinite(n)) entry.duration = n;
+        // Malformed or negative durations are ignored (the metric keeps 0).
+        if (DURATION.test(value)) {
+          const n = Number(value);
+          if (Number.isFinite(n)) entry.duration = n;
+        }
       } else if (key === 'desc' && !desc) {
         desc = true;
         entry.description = value;
