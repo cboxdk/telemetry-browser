@@ -290,12 +290,19 @@ describe('Inertia router visits', () => {
   });
 
   it('clears the navigation timeout once the visit finishes', async () => {
-    vi.useFakeTimers();
+    // Watch THE navigation timer (30 s), not a global timer count — other
+    // timers may exist depending on the environment.
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    const clear = vi.spyOn(globalThis, 'clearTimeout');
     try {
       inertiaVisit('/timers', {});
-      expect(vi.getTimerCount()).toBe(0);
+      const index = set.mock.calls.findIndex((c) => c[1] === 30_000);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const handle = set.mock.results[index]!.value;
+      expect(clear).toHaveBeenCalledWith(handle);
     } finally {
-      vi.useRealTimers();
+      set.mockRestore();
+      clear.mockRestore();
     }
   });
 });
