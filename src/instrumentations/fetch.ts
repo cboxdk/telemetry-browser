@@ -18,11 +18,13 @@ export function instrumentFetch(tracer: Tracer): void {
     const sameOrigin = url.startsWith('/') || url.startsWith(location.origin);
     const id = spanId();
     const start = now();
+    // Captured now: a soft navigation may move the active trace before this ends.
+    const scope = tracer.context.scope();
 
     let opts = init;
     if (sameOrigin) {
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-      headers.set('traceparent', buildTraceparent(tracer.context.traceId, id));
+      headers.set('traceparent', buildTraceparent(scope.traceId, id));
       opts = { ...init, headers };
     }
 
@@ -33,6 +35,8 @@ export function instrumentFetch(tracer: Tracer): void {
         start,
         end: now(),
         spanId: id,
+        traceId: scope.traceId,
+        parentSpanId: scope.parentSpanId,
         status: ok ? 'ok' : 'error',
         attributes: {
           [ATTR.HTTP_METHOD]: method,
@@ -44,6 +48,20 @@ export function instrumentFetch(tracer: Tracer): void {
     return original(input, opts).then(
       (res) => {
         finish(res.status, res.status < 500);
+        if (sameOrigin) {
+          tracer.observeResponse({
+            url,
+            spanId: id,
+            traceId: scope.traceId,
+            header: (name) => {
+              try {
+                return res.headers.get(name);
+              } catch {
+                return null;
+              }
+            },
+          });
+        }
         return res;
       },
       (err: unknown) => {

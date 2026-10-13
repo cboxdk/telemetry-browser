@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Livewire `wire:navigate` and Inertia soft navigations.** Each one becomes
+  a single `browser.navigation` span, from `livewire:navigate` to
+  `livewire:navigated` or from `inertia:start` to `inertia:finish`. It records
+  the framework, outcome, the previous path and back/forward/cached flags, and
+  the page request is its child. Once a framework is seen, the generic
+  `history` handler stops recording, so a navigation isn't counted twice
+  (spans or analytics page views). Turn it off with
+  `instrument.frameworks: false`.
+- **Later requests join the new page's trace.** After a Livewire navigation
+  the SDK adopts the swapped-in `<meta name="traceparent">`. After an Inertia
+  visit it adopts a `traceresponse` header if there is one; otherwise later
+  requests parent to the navigation span. If `X-Trace-Id` shows the server
+  started a different trace, the trace stays as it is and the server's id is
+  recorded. New `traceIdHeader` option (`data-trace-header`).
+
+### Changed
+
+- fetch/XHR spans keep the trace and parent they started under, even if a
+  navigation moves the active trace before they finish.
+- Page-load and Web Vitals spans always stay on the document's original
+  trace.
+- The standalone build initialises once per document. A second run of the
+  script (for example from Livewire re-running `<body>` scripts) does
+  nothing.
+
 ## [0.2.0] - 2026-07-07
 
 First **stable** release — graduates the SDK out of the `0.1.0-alpha` line; the

@@ -61,12 +61,24 @@ export const ATTR = {
   ENGAGEMENT_VISIBLE_MS: 'engagement.visible_ms',
   ENGAGEMENT_SCROLL_DEPTH: 'engagement.scroll_depth',
   ROUTE_FROM: 'browser.route.from',
+
+  // Framework soft navigations (on browser.navigation spans).
+  NAVIGATION_FRAMEWORK: 'browser.navigation.framework', // livewire | inertia
+  NAVIGATION_OUTCOME: 'browser.navigation.outcome', // completed | cancelled | interrupted | timeout
+  NAVIGATION_HISTORY: 'browser.navigation.history', // back/forward, not a link click
+  NAVIGATION_CACHED: 'browser.navigation.cached', // restored from the framework's cache, no server request
+  NAVIGATION_FETCH_MS: 'browser.navigation.fetch_ms', // Livewire: start → page HTML in hand (rest is swap)
+  // Where later spans parent after this navigation: meta | traceresponse | trace_id_header | none.
+  NAVIGATION_TRACE_SOURCE: 'browser.navigation.trace_source',
+  // The server's trace id for the navigation request, when it is NOT this trace (not adopted).
+  NAVIGATION_SERVER_TRACE_ID: 'browser.navigation.server_trace_id',
 } as const;
 
 /** Span names the SDK produces — a small, bounded, queryable set. */
 export const SPAN = {
   PAGE_LOAD: 'browser.page_load',
   ROUTE_CHANGE: 'browser.route_change',
+  NAVIGATION: 'browser.navigation',
   WEB_VITAL: 'browser.web_vital',
   RESOURCE: 'browser.resource',
   EXCEPTION: 'exception',

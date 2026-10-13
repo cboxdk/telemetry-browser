@@ -13,6 +13,12 @@ export * from './index';
   const endpoint = script?.dataset.endpoint;
   if (!endpoint) return;
 
+  // Once per document: Livewire's wire:navigate re-runs <body> scripts on
+  // every soft navigation, and a second init would double-wrap fetch/XHR.
+  const w = window as unknown as { __cboxTelemetryInit?: boolean };
+  if (w.__cboxTelemetryInit) return;
+  w.__cboxTelemetryInit = true;
+
   const meta = document.querySelector('meta[name=traceparent]')?.getAttribute('content') ?? undefined;
   const d = script!.dataset;
 
@@ -24,6 +30,7 @@ export * from './index';
     environment: d.environment,
     release: d.release,
     user: d.user,
+    traceIdHeader: d.traceHeader,
     sampleRate: d.sample ? parseFloat(d.sample) : undefined,
     analytics: d.analytics === '1',
     debug: d.debug === '1',
@@ -32,6 +39,7 @@ export * from './index';
       xhr: d.xhr !== '0',
       errors: d.errors !== '0',
       navigation: d.navigation !== '0',
+      frameworks: d.frameworks !== '0',
       webVitals: d.vitals !== '0',
     },
   });

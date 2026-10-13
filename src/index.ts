@@ -4,7 +4,8 @@ import { Exporter } from './exporter';
 import { instrumentDocumentLoad } from './instrumentations/documentLoad';
 import { instrumentErrors } from './instrumentations/errors';
 import { instrumentFetch } from './instrumentations/fetch';
-import { instrumentNavigation } from './instrumentations/navigation';
+import { instrumentFrameworkNavigation } from './instrumentations/frameworkNavigation';
+import { instrumentNavigation, type NavigationState } from './instrumentations/navigation';
 import { instrumentWebVitals } from './instrumentations/webVitals';
 import { instrumentXhr } from './instrumentations/xhr';
 import { fingerprint } from './fingerprint';
@@ -53,7 +54,13 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
   if (enabled(inst.errors)) guard(() => instrumentErrors(tracer));
   // SPA navigations the server never sees also become unsampled page views.
   if (enabled(inst.navigation)) {
-    guard(() => instrumentNavigation(tracer, analytics ? (_to, from) => analytics.pageView(from) : undefined));
+    const pageView = analytics ? (_to: string, from: string) => analytics.pageView(from) : undefined;
+    // Shared so a framework that owns navigation silences the generic handler.
+    const state: NavigationState = {};
+    guard(() => instrumentNavigation(tracer, pageView, state));
+    if (enabled(inst.frameworks)) {
+      guard(() => instrumentFrameworkNavigation(tracer, state, pageView, config.traceIdHeader ?? 'X-Trace-Id'));
+    }
   }
 
   return {

@@ -10,10 +10,15 @@ import type { Tracer } from '../tracer';
  * rating. The UI aggregates by web_vital.name.
  */
 export function instrumentWebVitals(tracer: Tracer): void {
+  // Vitals describe the document load (CLS/INP finalize on page hide, maybe
+  // long after soft navigations) — keep them on the document's own trace.
+  const { traceId, parentSpanId } = tracer.context.initial;
   const report = (metric: Metric) => {
     const t = now();
     tracer.record({
       name: SPAN.WEB_VITAL,
+      traceId,
+      parentSpanId,
       start: t,
       end: t,
       attributes: {
