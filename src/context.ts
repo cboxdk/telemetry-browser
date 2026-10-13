@@ -74,8 +74,8 @@ export class Context {
   }
 
   setUser(id: string | null): void {
-    if (id) this.extra[ATTR.ENDUSER_ID] = id;
-    else delete this.extra[ATTR.ENDUSER_ID];
+    if (id) this.extra[ATTR.USER_ID] = id;
+    else delete this.extra[ATTR.USER_ID];
   }
 
   setAttributes(attributes: Attributes): void {
@@ -98,7 +98,7 @@ export class Context {
     if (this.config.release) dims[ATTR.SERVICE_VERSION] = this.config.release;
 
     const user = typeof this.config.user === 'function' ? this.config.user() : this.config.user;
-    if (user) dims[ATTR.ENDUSER_ID] = user;
+    if (user) dims[ATTR.USER_ID] = user;
 
     return dims;
   }

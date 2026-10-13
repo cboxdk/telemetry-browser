@@ -29,7 +29,9 @@ describe('init', () => {
       expect(s.traceId).toBe('0af7651916cd43dd8448eb211c80319c');
       expect(s.attributes[ATTR.SERVICE_NAME]).toBe('my-app');
       expect(s.attributes[ATTR.DEPLOYMENT_ENVIRONMENT]).toBe('production');
-      expect(s.attributes[ATTR.ENDUSER_ID]).toBe('user-42');
+      expect(s.attributes[ATTR.USER_ID]).toBe('user-42');
+      expect(s.attributes['user.id']).toBe('user-42');
+      expect(s.attributes['enduser.id']).toBeUndefined();
       expect(s.attributes[ATTR.BROWSER]).toBe(true);
       expect(s.attributes[ATTR.SESSION_ID]).toMatch(/^[0-9a-f]{16}$/);
     });
@@ -94,5 +96,44 @@ describe('init', () => {
     expect(s.status).toBe('error');
     expect(s.attributes[ATTR.EXCEPTION_TYPE]).toBe('TypeError');
     expect(s.attributes[ATTR.EXCEPTION_MESSAGE]).toBe('boom');
+  });
+
+  describe('once per page', () => {
+    const off = { documentLoad: false, webVitals: false, fetch: false, xhr: false, errors: false, navigation: false };
+
+    it('returns the existing handle on a second call and ignores its config', () => {
+      const first = init({ endpoint: '/a', serviceName: 'first', instrument: off })!;
+      const second = init({ endpoint: '/b', serviceName: 'second', instrument: off });
+      expect(second).toBe(first);
+
+      second!.record({ name: 'manual.thing' });
+      second!.flush();
+      expect(beacon).toHaveBeenCalledTimes(1);
+      expect(beacon.mock.calls[0]![0]).toBe('/a');
+      expect(JSON.parse(beacon.mock.calls[0]![1] as string).spans[0].attributes[ATTR.SERVICE_NAME]).toBe('first');
+    });
+
+    it('warns about the ignored config only in debug mode', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      init({ endpoint: '/x', instrument: off });
+      init({ endpoint: '/x', instrument: off });
+      expect(warn).not.toHaveBeenCalled();
+      init({ endpoint: '/x', instrument: off, debug: true });
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('keeps a sampled-out page sampled out', () => {
+      const random = vi.spyOn(Math, 'random').mockReturnValue(0.99);
+      expect(init({ endpoint: '/x', sampleRate: 0.5, instrument: off })).toBeUndefined();
+      random.mockReturnValue(0);
+      expect(init({ endpoint: '/x', sampleRate: 0.5, instrument: off })).toBeUndefined();
+      random.mockRestore();
+    });
+
+    it('does not count a call without an endpoint', () => {
+      expect(init({ endpoint: '' })).toBeUndefined();
+      expect(init({ endpoint: '/x', instrument: off })).toBeDefined();
+    });
   });
 });

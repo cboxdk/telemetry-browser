@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The standalone build's handle is reachable.** The `<script>` build
+  started itself from its `data-*` attributes but kept the handle, so a page
+  could not call `setUser`, `track` or `error`. It is now
+  `window.Telemetry.client`. Code that may run before the script loads pushes
+  callbacks onto `window.TelemetryQueue`
+  (`(window.TelemetryQueue = window.TelemetryQueue || []).push((t) => t.setUser('42'))`).
+  They run in order once the SDK has started, and a later `push()` runs at
+  once. A manual `window.Telemetry.init()` does the same.
+- **`data-user-id`** sets the user id from the script tag (`data-user` still
+  works). `ATTR.USER_ID` is exported.
+
+### Changed
+
+- **`init()` runs once per page.** A second call returns the first handle and
+  ignores its config (`debug: true` logs a warning) instead of building a
+  second tracer and adding a second set of error, history and navigation
+  listeners. This also covers the npm build and the script tag on the same
+  page. A sampled-out page stays sampled out.
+- **The user id is `user.id`, not `enduser.id`.** laravel-telemetry stamps
+  `user.id` on its request spans and telemetry-ui's user dimension reads
+  `user.id`, so browser spans were missing from per-user views. (Both keys
+  are valid OTel attributes today; `user.id` is the one the backend uses.)
+  `ATTR.ENDUSER_ID` is deprecated and is now an alias of `user.id`.
+  **Upgrade note:** queries or dashboards that filter browser spans on
+  `enduser.id` must use `user.id`.
+
+### Fixed
+
+- **The page-load span can no longer throw.** It is recorded from a timer,
+  outside any guard, so a browser without `performance.getEntriesByType`
+  raised an uncaught error. It now records no page-load span instead.
+
+The standalone build is ~9.5 KB gzipped (+0.2 KB).
+
 ## [0.3.0] - 2026-10-13
 
 ### Added

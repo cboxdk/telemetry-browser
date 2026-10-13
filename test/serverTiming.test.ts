@@ -199,4 +199,16 @@ describe('Server-Timing on spans', () => {
     expect(s.attributes['server_timing.app.duration_ms']).toBe(48.1);
     expect(s.attributes['server_timing.app.description']).toBeUndefined();
   });
+  it('never throws from the page-load timer when navigation timing is unusable', async () => {
+    vi.spyOn(performance, 'getEntriesByType').mockImplementation(() => {
+      throw new Error('no navigation timing');
+    });
+    const t = init({ endpoint: '/x', instrument: only('documentLoad') })!;
+
+    // An uncaught throw from the timer would fail this test as an unhandled error.
+    await new Promise((r) => setTimeout(r, 0));
+    t.flush();
+
+    expect(spans().find((x) => x.name === 'browser.page_load')).toBeUndefined();
+  });
 });

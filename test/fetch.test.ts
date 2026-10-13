@@ -64,6 +64,7 @@ describe('fetch instrumentation', () => {
   it('a second init() does not wrap fetch twice', async () => {
     const first = init({ endpoint: '/x', instrument: off })!;
     const second = init({ endpoint: '/x', instrument: off })!;
+    expect(second).toBe(first);
     await window.fetch('/api/once');
     first.flush();
     second.flush();

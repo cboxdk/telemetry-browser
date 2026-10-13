@@ -67,7 +67,8 @@ export interface TelemetryConfig {
 
   /**
    * The authenticated user id (or a getter, re-read at span time). Never a
-   * name/email — an id, like the backend's enduser.id.
+   * name/email — an id, like the backend's `user.id`. The
+   * standalone build reads it from `data-user-id` (or `data-user`).
    */
   user?: string | (() => string | undefined | null);
 

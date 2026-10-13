@@ -2,7 +2,7 @@
  * The attribute contract — the dimensions every browser span carries.
  *
  * These mirror the backend (`cboxdk/laravel-telemetry`) semantic
- * conventions where they overlap (service, deployment, enduser, http,
+ * conventions where they overlap (service, deployment, user, http,
  * session), so a browser span and the backend span it triggered filter by
  * the SAME keys. `browser.*`, `device.*` and `web_vital.*` are the
  * frontend-specific dimensions. `cboxdk/laravel-telemetry-ui` reads these
@@ -13,7 +13,9 @@ export const ATTR = {
   SERVICE_NAME: 'service.name',
   SERVICE_VERSION: 'service.version',
   DEPLOYMENT_ENVIRONMENT: 'deployment.environment.name',
-  ENDUSER_ID: 'enduser.id',
+  USER_ID: 'user.id',
+  /** @deprecated Use `USER_ID`. An alias kept for 0.3 code; the SDK emits `user.id`, as the backend does. */
+  ENDUSER_ID: 'user.id',
   SESSION_ID: 'session.id',
 
   // HTTP — same keys the backend uses on its request spans.

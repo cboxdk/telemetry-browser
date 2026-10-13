@@ -9,6 +9,7 @@ import { instrumentNavigation, type NavigationState } from './instrumentations/n
 import { instrumentWebVitals } from './instrumentations/webVitals';
 import { instrumentXhr } from './instrumentations/xhr';
 import { fingerprint } from './fingerprint';
+import { current, remember } from './instance';
 import { ATTR, SPAN } from './semconv';
 import { now, Tracer } from './tracer';
 import type { Attributes, Telemetry, TelemetryConfig } from './types';
@@ -23,12 +24,25 @@ export type { Attributes, Telemetry, TelemetryConfig, WireSpan, SpanKind, SpanSt
  * returns a handle for manual spans/errors. Best-effort: it never throws
  * into your app, and returns undefined when there's no DOM or the page is
  * sampled out.
+ *
+ * Once per page: a second call (another bundle, the standalone build, a
+ * re-run `<script>`) returns the first call's handle and ignores its config,
+ * so nothing is instrumented twice. A sampled-out page stays sampled out.
  */
 export function init(config: TelemetryConfig): Telemetry | undefined {
   if (typeof window === 'undefined' || !config || !config.endpoint) return undefined;
 
+  const existing = current();
+  if (existing !== undefined) {
+    if (config.debug) console.warn('[telemetry] init() already ran on this page; returning the existing handle, this config is ignored');
+    return existing ?? undefined;
+  }
+
   const sample = config.sampleRate ?? 1;
-  if (sample < 1 && Math.random() > sample) return undefined;
+  if (sample < 1 && Math.random() > sample) {
+    remember(null);
+    return undefined;
+  }
 
   const context = new Context(config);
   const exporter = new Exporter(config.endpoint, config.maxSpans ?? 128, config.debug ?? false);
@@ -66,7 +80,7 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
     }
   }
 
-  return {
+  const handle: Telemetry = {
     record: (span) => tracer.record({ start: now(), end: now(), ...span }),
     error: (error, attributes) => {
       const t = now();
@@ -91,4 +105,6 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
     traceId: () => context.traceId,
     flush: () => exporter.flush(),
   };
+  remember(handle);
+  return handle;
 }

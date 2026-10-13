@@ -6,7 +6,18 @@ const round = (n: number): number => Math.max(0, Math.round(n));
 
 /** A page-load span with navigation timing, Server-Timing + device dimensions. */
 export function instrumentDocumentLoad(tracer: Tracer, serverTiming = true): void {
+  // Guarded: this runs from a timer, outside any caller's try, and a
+  // browser without the Navigation Timing L2 API must not see it throw.
   const emit = () => {
+    try {
+      record();
+    } catch {
+      /* no page-load span rather than an uncaught error */
+    }
+  };
+
+  const record = () => {
+    if (typeof performance.getEntriesByType !== 'function') return;
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
     if (!nav) return;
     const t0 = performance.timeOrigin;
