@@ -82,8 +82,74 @@ Span names are a small bounded set (`SPAN`): `browser.page_load`,
   exception spans, matching the backend's `exception.*` keys.
 - **SPA route changes** — `history` pushState/replaceState + popstate as
   `browser.route_change` spans.
+- **Livewire `wire:navigate` and Inertia visits** — one `browser.navigation`
+  span per soft navigation, and later requests join the new page's server
+  trace (see below).
 
 Toggle any of them via `instrument: { fetch: false, ... }`.
+
+## Livewire & Inertia soft navigations
+
+Detected automatically from the frameworks' own events; nothing to
+configure. Once a framework is seen it owns navigation, and the generic
+`history` handler stops recording, so a navigation is never counted twice
+(the framework's own `pushState` would otherwise look like a second one).
+
+| | Livewire 3 (`wire:navigate`) | Inertia v1 / v2 |
+|---|---|---|
+| Span starts | `livewire:navigate` | `inertia:start` |
+| Span ends | `livewire:navigated` | `inertia:finish` |
+| Back/forward | `livewire:navigate` with `history: true` | `inertia:navigate` without a visit |
+| Ignored | a `livewire:navigate` another listener prevented | prefetches, `async` visits, partial reloads (`only`/`except`) of the current page |
+
+Each `browser.navigation` span carries `browser.navigation.framework`,
+`browser.navigation.outcome` (`completed`/`cancelled`/`interrupted`, or
+`timeout` when no finish event came within 30 s, e.g. a failed Livewire fetch),
+`browser.route.from`, `url.path`/`http.url` of the new page,
+`browser.navigation.history`, `browser.navigation.cached`, and for Livewire
+`browser.navigation.fetch_ms` (time until the page HTML was in hand; the
+rest is the swap). An analytics page view is emitted once per completed
+navigation that changed the path. The request that fetched the page is a
+child of the navigation span.
+
+**Which trace later requests join** (recorded as
+`browser.navigation.trace_source`):
+
+- **Livewire** (`meta`) — `wire:navigate` fetches the full page and swaps
+  `<head>`, so the new page's `<meta name="traceparent">` (from
+  `@telemetryTraceparent` / `@telemetryBrowser`) names the new page's
+  server span. Later fetch/XHR spans parent to it, exactly as after a full
+  page load.
+- **Inertia** gets JSON, so there is no meta:
+  - `traceresponse` — a W3C `traceresponse` header on the page response is
+    adopted (trace and span id).
+  - `navigation` — otherwise, later requests parent to the navigation span
+    itself, in the same trace. The page request carried our `traceparent`,
+    so a backend that continues incoming traces (laravel-telemetry's
+    default) put its request span under that navigation too.
+  - `none` — if the `X-Trace-Id` header (`traceIdHeader`; laravel-telemetry's
+    `traces.response_header`) shows the server started a *different* trace,
+    the SDK can't join it without a span id. The trace stays put and the
+    server's id is recorded as `browser.navigation.server_trace_id`.
+- Cached restores, cancelled/interrupted/failed visits never move the trace.
+
+Limits:
+
+- A page Livewire prefetched (`wire:navigate.hover`, or on mousedown) is
+  fetched *before* `livewire:navigate`, so that fetch span is not under the
+  navigation span. The new meta is still adopted.
+- A Livewire cached back/forward restore leaves later requests on the trace
+  you navigated away from, not the restored page's old one: that page's
+  server span ended long ago.
+- Web Vitals and the page-load span stay on the document's original trace;
+  they describe the hard load.
+- Inertia: which response fetched the page is matched by path plus the
+  `X-Inertia` response header, and needs the `xhr` (axios) or `fetch`
+  instrumentation enabled to read headers. Without either, later requests
+  still parent to the navigation span.
+- Put `@telemetryBrowser` (or your SDK `<script>`) in `<head>`. The
+  standalone build initialises once per document, so if Livewire runs it
+  again from `<body>` that second run is a no-op.
 
 ## Source maps (symbolication)
 
@@ -156,7 +222,8 @@ telemetry.flush();
 | `attributes` | `{}` | extra global dimensions |
 | `sampleRate` | `1` | head sampling, decided once per page |
 | `analytics` | `false` | unsampled analytics channel: SPA page views, engagement, `track()` |
-| `instrument` | all on | per-instrumentation toggles |
+| `instrument` | all on | per-instrumentation toggles (`frameworks: false` turns off Livewire/Inertia handling) |
+| `traceIdHeader` | `X-Trace-Id` | the backend's trace-id response header (`data-trace-header`); `''` ignores it |
 | `maxSpans` | `128` | buffer cap before a forced flush |
 
 Spans batch and ship with `sendBeacon` on `visibilitychange`/`pagehide`,

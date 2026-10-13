@@ -3,6 +3,12 @@ import { sessionId } from './session';
 import { ATTR } from './semconv';
 import type { Attributes, TelemetryConfig } from './types';
 
+/** A trace + the span a new span parents to. */
+export interface Scope {
+  traceId: string;
+  parentSpanId: string;
+}
+
 /**
  * The trace root + the dimensions stamped on spans. The endpoint stamps the
  * app resource (service.name, host) itself, so here we carry the browser's
@@ -10,8 +16,18 @@ import type { Attributes, TelemetryConfig } from './types';
  * (heavy, only on the page-load span).
  */
 export class Context {
-  readonly traceId: string;
-  readonly rootSpanId: string;
+  /**
+   * The ACTIVE page trace. It starts as the server-rendered page's trace and
+   * moves when a soft navigation fetches a new server page (`rebase()`), so
+   * later fetch/XHR spans parent to the page the user is actually on.
+   */
+  traceId: string;
+  /** The span new browser spans parent to by default (the active page's server span). */
+  rootSpanId: string;
+  /** The trace the document itself was loaded under — page-load + Web Vitals stay here. */
+  readonly initial: Scope;
+  /** The span id of the soft navigation in flight, if any (set by the navigation instrumentation). */
+  navigationSpanId: string | undefined = undefined;
   /** The visit key — server-provided (data-session) or the per-tab default. */
   readonly session: string;
 
@@ -21,8 +37,24 @@ export class Context {
     const server = parseTraceparent(config.traceparent);
     this.traceId = server?.traceId ?? newTraceId();
     this.rootSpanId = server?.spanId ?? newSpanId();
+    this.initial = { traceId: this.traceId, parentSpanId: this.rootSpanId };
     this.session = config.session || sessionId();
     this.extra = { ...(config.attributes ?? {}) };
+  }
+
+  /**
+   * Where a span starting NOW belongs: the active trace, parented to the
+   * in-flight soft navigation if there is one, else the active page root.
+   * Capture it when work starts — a navigation may rebase before it ends.
+   */
+  scope(): Scope {
+    return { traceId: this.traceId, parentSpanId: this.navigationSpanId ?? this.rootSpanId };
+  }
+
+  /** Move the active page trace (a soft navigation landed on a new server page). */
+  rebase(traceId: string, parentSpanId: string): void {
+    this.traceId = traceId;
+    this.rootSpanId = parentSpanId;
   }
 
   /** The current authenticated user id, if configured. */

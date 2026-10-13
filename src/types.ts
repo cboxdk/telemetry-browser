@@ -42,6 +42,12 @@ export interface InstrumentationConfig {
   xhr?: boolean;
   errors?: boolean;
   navigation?: boolean;
+  /**
+   * Livewire `wire:navigate` + Inertia soft navigations as
+   * `browser.navigation` spans that move the active trace to the new page.
+   * Needs `navigation`; on by default, inert unless a framework is present.
+   */
+  frameworks?: boolean;
 }
 
 export interface TelemetryConfig {
@@ -72,6 +78,14 @@ export interface TelemetryConfig {
    * key. When absent the SDK generates its own.
    */
   session?: string;
+
+  /**
+   * The response header the backend puts its trace id in
+   * (laravel-telemetry's `traces.response_header`, default `X-Trace-Id`).
+   * Read off Inertia navigation responses to tell whether the server
+   * continued this trace. `''` to ignore it.
+   */
+  traceIdHeader?: string;
 
   /** Extra global dimensions stamped on every span (team, tenant, plan…). */
   attributes?: Attributes;

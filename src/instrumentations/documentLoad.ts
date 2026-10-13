@@ -27,7 +27,9 @@ export function instrumentDocumentLoad(tracer: Tracer): void {
       kind: 'client',
       start: t0 + nav.startTime,
       end: t0 + (nav.loadEventEnd || nav.responseEnd || nav.domComplete),
-      parentSpanId: tracer.context.rootSpanId,
+      // The document's own trace, even if a soft navigation already moved on.
+      traceId: tracer.context.initial.traceId,
+      parentSpanId: tracer.context.initial.parentSpanId,
       attributes,
     });
   };
