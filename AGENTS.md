@@ -17,7 +17,7 @@ npm run build   # dist: ESM + CJS + .d.ts + IIFE (window.Telemetry)
    failure drops the span, it never surfaces.
 2. **Dimensions align with the backend.** `src/semconv.ts` is the shared
    contract — mirror `cboxdk/laravel-telemetry`'s keys where they overlap
-   (service/deployment/enduser/http/session). `telemetry-ui` reads these.
+   (service/deployment/user/http/session; the user id is `user.id`). `telemetry-ui` reads these.
 3. **Wire format matches the ingest endpoint** (`{spans:[{traceId,spanId,
    parentSpanId,name,kind,start,end,attributes,status}]}`, ms timestamps).
 4. **traceparent only propagates same-origin** — never trip CORS preflight.

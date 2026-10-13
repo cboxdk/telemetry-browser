@@ -43,8 +43,52 @@ directive emits):
 <meta name="traceparent" content="00-...-...-01">
 <script src="/telemetry/browser.js" defer
         data-endpoint="/telemetry/spans"
-        data-service="my-app" data-environment="production"></script>
+        data-service="my-app" data-environment="production"
+        data-user-id="42"></script>
 ```
+
+### Using the standalone build's handle
+
+The auto-started handle (the same object `init()` returns) is
+`window.Telemetry.client`. A script that may run *before* the SDK loads
+(an inline `<script>`, a `defer`red tag) pushes a callback onto
+`window.TelemetryQueue` instead. Queued callbacks run in order once the
+SDK has started; after that, `push()` runs a callback at once, so the same
+line works either way:
+
+```html
+<script>
+  (window.TelemetryQueue = window.TelemetryQueue || []).push((telemetry) => {
+    telemetry.setUser('42');
+    telemetry.track('signup_completed', { plan: 'pro' });
+  });
+</script>
+```
+
+- A callback that throws is skipped; the rest still run.
+- On a page that is sampled out (`data-sample`), there is no client:
+  `Telemetry.client` stays `undefined` and queued callbacks never run.
+- `init()` runs once per page. A second call, from `window.Telemetry.init`,
+  your own bundle, or the script tag run again by Livewire's
+  `wire:navigate`, returns the first handle and ignores its config
+  (`debug: true` logs a warning), so fetch/XHR, history and the error
+  listeners are never patched twice. The sampling decision is not re-rolled
+  either. Without a `data-endpoint` nothing auto-starts, and calling
+  `window.Telemetry.init({...})` yourself publishes the client and runs the
+  queue the same way.
+
+| `data-*` | Option |
+|---|---|
+| `data-endpoint` | `endpoint` (required to auto-start) |
+| `data-service`, `data-environment`, `data-release` | `serviceName`, `environment`, `release` |
+| `data-user-id` (or `data-user`) | `user` |
+| `data-session` | `session` |
+| `data-sample` | `sampleRate` |
+| `data-trace-header` | `traceIdHeader` |
+| `data-analytics="1"`, `data-debug="1"` | `analytics`, `debug` |
+| `data-fetch`, `data-xhr`, `data-errors`, `data-navigation`, `data-frameworks`, `data-vitals`, `data-server-timing` | `instrument.*` (`"0"` turns one off) |
+
+The traceparent comes from `<meta name="traceparent">`.
 
 ## The dimension contract
 
@@ -55,7 +99,7 @@ same keys. Exported as `ATTR` for the UI to align against.
 | Dimension | Key | On |
 |---|---|---|
 | Service / env / release | `service.name`, `deployment.environment.name`, `service.version` | every span |
-| User (id only) | `enduser.id` | every span |
+| User (id only) | `user.id` | every span |
 | Session | `session.id` | every span |
 | Browser marker | `browser` (`true`) | every span |
 | URL | `url.path`, `url.full`, `http.url` | span-dependent |
