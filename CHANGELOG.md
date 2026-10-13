@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Upgrade note:** queries or dashboards that filter browser spans on
   `enduser.id` must use `user.id`.
 
+### Fixed
+
+- **The page-load span can no longer throw.** It is recorded from a timer,
+  outside any guard, so a browser without `performance.getEntriesByType`
+  raised an uncaught error. It now records no page-load span instead.
+
 The standalone build is ~9.5 KB gzipped (+0.2 KB).
 
 ## [0.3.0] - 2026-10-13
