@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Server-Timing on spans.** The backend's `Server-Timing` metrics (which
+  laravel-telemetry can send, opt in) become
+  `server_timing.<name>.duration_ms` and `server_timing.<name>.description`
+  attributes: on `browser.page_load` from the navigation entry, and on
+  fetch/XHR spans from the response header itself. Names are sanitized to
+  `[a-z][a-z0-9_]*`, at most 10 metrics per span. Cross-origin responses
+  need `Access-Control-Expose-Headers: Server-Timing`. Turn it off with
+  `instrument.serverTiming: false` (`data-server-timing="0"`). Adds about
+  0.7 KB gzipped to the standalone build.
+
 - **Livewire `wire:navigate` and Inertia soft navigations.** Each one becomes
   a single `browser.navigation` span, from `livewire:navigate` to
   `livewire:navigated` or from `inertia:start` to `inertia:finish`. It records

@@ -1,5 +1,6 @@
 import { buildTraceparent, spanId } from '../ids';
 import { ATTR } from '../semconv';
+import { parseServerTiming, serverTimingAttributes } from '../serverTiming';
 import { now } from '../tracer';
 import type { Tracer } from '../tracer';
 
@@ -7,8 +8,10 @@ import type { Tracer } from '../tracer';
  * Instruments fetch: a client span per call, and — for SAME-ORIGIN calls
  * only — a W3C traceparent header so the backend continues the trace.
  * Cross-origin is left untouched (an unexpected header trips CORS preflight).
+ * The response's `Server-Timing` header lands on the span; cross-origin it
+ * is only readable when the server exposes it (Access-Control-Expose-Headers).
  */
-export function instrumentFetch(tracer: Tracer): void {
+export function instrumentFetch(tracer: Tracer, serverTiming = true): void {
   if (!window.fetch) return;
   const original = window.fetch.bind(window);
 
@@ -28,7 +31,7 @@ export function instrumentFetch(tracer: Tracer): void {
       opts = { ...init, headers };
     }
 
-    const finish = (status: number, ok: boolean) =>
+    const finish = (status: number, ok: boolean, extra?: Record<string, string | number | boolean>) =>
       tracer.record({
         name: `fetch ${method}`,
         kind: 'client',
@@ -42,12 +45,21 @@ export function instrumentFetch(tracer: Tracer): void {
           [ATTR.HTTP_METHOD]: method,
           [ATTR.HTTP_URL]: url,
           [ATTR.HTTP_STATUS]: status,
+          ...extra,
         },
       });
 
     return original(input, opts).then(
       (res) => {
-        finish(res.status, res.status < 500);
+        let timing;
+        if (serverTiming) {
+          try {
+            timing = serverTimingAttributes(parseServerTiming(res.headers.get('server-timing')));
+          } catch {
+            /* unreadable headers — the span still records */
+          }
+        }
+        finish(res.status, res.status < 500, timing);
         if (sameOrigin) {
           tracer.observeResponse({
             url,

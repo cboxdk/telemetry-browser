@@ -72,6 +72,11 @@ export const ATTR = {
   NAVIGATION_TRACE_SOURCE: 'browser.navigation.trace_source',
   // The server's trace id for the navigation request, when it is NOT this trace (not adopted).
   NAVIGATION_SERVER_TRACE_ID: 'browser.navigation.server_trace_id',
+
+  // Server-Timing (on browser.page_load and fetch/XHR spans). A prefix:
+  // `server_timing.<name>.duration_ms` and `server_timing.<name>.description`,
+  // <name> sanitized to [a-z][a-z0-9_]*.
+  SERVER_TIMING: 'server_timing',
 } as const;
 
 /** Span names the SDK produces — a small, bounded, queryable set. */

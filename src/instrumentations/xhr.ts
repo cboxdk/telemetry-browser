@@ -1,10 +1,22 @@
 import { buildTraceparent, spanId } from '../ids';
 import { ATTR } from '../semconv';
+import { parseServerTiming, serverTimingAttributes } from '../serverTiming';
 import { now } from '../tracer';
 import type { Tracer } from '../tracer';
 
+/**
+ * Reads `Server-Timing` without the console warning `getResponseHeader`
+ * logs for a header a cross-origin response did not expose.
+ */
+function serverTimingHeader(xhr: XMLHttpRequest, sameOrigin: boolean): string | null {
+  if (sameOrigin) return xhr.getResponseHeader('server-timing');
+  const all = xhr.getAllResponseHeaders();
+  const match = /^server-timing:(.*)$/im.exec(all);
+  return match ? match[1]!.trim() : null;
+}
+
 /** Same as fetch instrumentation, for XMLHttpRequest. */
-export function instrumentXhr(tracer: Tracer): void {
+export function instrumentXhr(tracer: Tracer, serverTiming = true): void {
   const Xhr = window.XMLHttpRequest;
   if (!Xhr) return;
 
@@ -38,6 +50,14 @@ export function instrumentXhr(tracer: Tracer): void {
         }
       }
       this.addEventListener('loadend', () => {
+        let timing;
+        if (serverTiming && this.status !== 0) {
+          try {
+            timing = serverTimingAttributes(parseServerTiming(serverTimingHeader(this, sameOrigin)));
+          } catch {
+            /* unreadable headers — the span still records */
+          }
+        }
         tracer.record({
           name: `xhr ${t.method}`,
           kind: 'client',
@@ -51,6 +71,7 @@ export function instrumentXhr(tracer: Tracer): void {
             [ATTR.HTTP_METHOD]: t.method,
             [ATTR.HTTP_URL]: t.url,
             [ATTR.HTTP_STATUS]: this.status,
+            ...timing,
           },
         });
         if (sameOrigin && this.status !== 0) {

@@ -15,6 +15,7 @@ import type { Attributes, Telemetry, TelemetryConfig } from './types';
 
 export { ATTR, SPAN } from './semconv';
 export { fingerprint, normalizeMessage } from './fingerprint';
+export { parseServerTiming, serverTimingAttributes, type ServerTimingEntry } from './serverTiming';
 export type { Attributes, Telemetry, TelemetryConfig, WireSpan, SpanKind, SpanStatus } from './types';
 
 /**
@@ -47,10 +48,12 @@ export function init(config: TelemetryConfig): Telemetry | undefined {
     }
   };
 
-  if (enabled(inst.documentLoad)) guard(() => instrumentDocumentLoad(tracer));
+  const serverTiming = enabled(inst.serverTiming);
+
+  if (enabled(inst.documentLoad)) guard(() => instrumentDocumentLoad(tracer, serverTiming));
   if (enabled(inst.webVitals)) guard(() => instrumentWebVitals(tracer));
-  if (enabled(inst.fetch)) guard(() => instrumentFetch(tracer));
-  if (enabled(inst.xhr)) guard(() => instrumentXhr(tracer));
+  if (enabled(inst.fetch)) guard(() => instrumentFetch(tracer, serverTiming));
+  if (enabled(inst.xhr)) guard(() => instrumentXhr(tracer, serverTiming));
   if (enabled(inst.errors)) guard(() => instrumentErrors(tracer));
   // SPA navigations the server never sees also become unsampled page views.
   if (enabled(inst.navigation)) {

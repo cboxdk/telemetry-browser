@@ -62,6 +62,7 @@ same keys. Exported as `ATTR` for the UI to align against.
 | HTTP | `http.request.method`, `http.response.status_code` | fetch/XHR |
 | Device / client | `user_agent.original`, `browser.language`, `browser.viewport`, `network.connection.type`, `device.memory_gb` | page load |
 | Page timing | `browser.ttfb_ms`, `browser.fcp_ms`, `browser.dom_interactive_ms` | page load |
+| Server-Timing | `server_timing.<name>.duration_ms`, `server_timing.<name>.description` | page load, fetch/XHR |
 | Web Vitals | `web_vital.name`, `web_vital.value`, `web_vital.rating` | vital markers |
 | Errors | `exception.type`, `exception.message`, `exception.file`, `exception.line`, `exception.column`, `exception.group`, `exception.stacktrace` | error spans |
 
@@ -78,6 +79,8 @@ Span names are a small bounded set (`SPAN`): `browser.page_load`,
 - **fetch & XHR** — a client span per call, with `traceparent` propagated
   to **same-origin** requests so the backend continues the trace
   (cross-origin is left untouched to avoid CORS preflight).
+- **Server-Timing** — the backend's `Server-Timing` metrics on the spans
+  they describe (see below).
 - **Errors** — uncaught errors and unhandled promise rejections as
   exception spans, matching the backend's `exception.*` keys.
 - **SPA route changes** — `history` pushState/replaceState + popstate as
@@ -151,6 +154,32 @@ Limits:
   standalone build initialises once per document, so if Livewire runs it
   again from `<body>` that second run is a no-op.
 
+## Server-Timing
+
+When the backend sends a `Server-Timing` header (laravel-telemetry can, opt
+in), the SDK puts each metric on the span for that response:
+
+```
+Server-Timing: db;dur=12.3;desc="3 queries", app;dur=48.1
+→ server_timing.db.duration_ms = 12.3
+  server_timing.db.description = "3 queries"
+  server_timing.app.duration_ms = 48.1
+```
+
+- **Page load**: read from the navigation entry
+  (`performance.getEntriesByType('navigation')[0].serverTiming`).
+- **fetch / XHR**: parsed from the response's own `Server-Timing` header,
+  so it is exact even when the same URL is requested many times.
+- Names are lowercased and sanitized to `[a-z][a-z0-9_]*` (`DB-Read` →
+  `db_read`); at most 10 metrics per span; a repeated name keeps its first
+  entry. A metric with no `dur` records `0`; `description` only when set.
+- **Cross-origin** fetch/XHR: the browser hides the header unless the
+  server sends `Access-Control-Expose-Headers: Server-Timing`. The SDK
+  reads the header, not resource timing entries, so `Timing-Allow-Origin`
+  is not needed. Same-origin needs nothing.
+- Turn it off with `instrument: { serverTiming: false }`
+  (`data-server-timing="0"`).
+
 ## Source maps (symbolication)
 
 Minified stacks (`app-abc.js:1:2481`) group and read poorly, and the file
@@ -222,7 +251,7 @@ telemetry.flush();
 | `attributes` | `{}` | extra global dimensions |
 | `sampleRate` | `1` | head sampling, decided once per page |
 | `analytics` | `false` | unsampled analytics channel: SPA page views, engagement, `track()` |
-| `instrument` | all on | per-instrumentation toggles (`frameworks: false` turns off Livewire/Inertia handling) |
+| `instrument` | all on | per-instrumentation toggles (`frameworks: false` turns off Livewire/Inertia handling, `serverTiming: false` stops reading `Server-Timing`) |
 | `traceIdHeader` | `X-Trace-Id` | the backend's trace-id response header (`data-trace-header`); `''` ignores it |
 | `maxSpans` | `128` | buffer cap before a forced flush |
 

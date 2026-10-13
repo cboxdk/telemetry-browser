@@ -48,6 +48,12 @@ export interface InstrumentationConfig {
    * Needs `navigation`; on by default, inert unless a framework is present.
    */
   frameworks?: boolean;
+  /**
+   * Read the backend's `Server-Timing` metrics onto the page-load and
+   * fetch/XHR spans as `server_timing.<name>.*` attributes. On by default;
+   * inert when the server sends no header.
+   */
+  serverTiming?: boolean;
 }
 
 export interface TelemetryConfig {
