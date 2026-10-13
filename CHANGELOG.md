@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-13
+
 ### Added
 
 - **The standalone build's handle is reachable.** The `<script>` build
@@ -41,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside any guard, so a browser without `performance.getEntriesByType`
   raised an uncaught error. It now records no page-load span instead.
 
-The standalone build is ~9.5 KB gzipped (+0.2 KB).
+The standalone build is ~9.7 KB gzipped (+0.2 KB).
 
 ## [0.3.0] - 2026-10-13
 
