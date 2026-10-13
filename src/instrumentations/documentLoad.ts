@@ -1,10 +1,11 @@
 import { ATTR, SPAN } from '../semconv';
+import { serverTimingAttributes } from '../serverTiming';
 import type { Tracer } from '../tracer';
 
 const round = (n: number): number => Math.max(0, Math.round(n));
 
-/** A page-load span with navigation timing + device dimensions. */
-export function instrumentDocumentLoad(tracer: Tracer): void {
+/** A page-load span with navigation timing, Server-Timing + device dimensions. */
+export function instrumentDocumentLoad(tracer: Tracer, serverTiming = true): void {
   const emit = () => {
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
     if (!nav) return;
@@ -21,6 +22,8 @@ export function instrumentDocumentLoad(tracer: Tracer): void {
       [ATTR.PAGE_NAV_TYPE]: nav.type,
     } as Record<string, string | number | boolean>;
     if (typeof fcp === 'number') attributes[ATTR.PAGE_FCP_MS] = round(fcp);
+    // The document response's own Server-Timing (absent in older browsers).
+    if (serverTiming) Object.assign(attributes, serverTimingAttributes(nav.serverTiming));
 
     tracer.record({
       name: SPAN.PAGE_LOAD,

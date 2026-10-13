@@ -48,6 +48,12 @@ export interface InstrumentationConfig {
    * Needs `navigation`; on by default, inert unless a framework is present.
    */
   frameworks?: boolean;
+  /**
+   * Read the backend's `Server-Timing` metrics onto the page-load and
+   * fetch/XHR spans as `server_timing.<name>.*` attributes. On by default;
+   * inert when the server sends no header.
+   */
+  serverTiming?: boolean;
 }
 
 export interface TelemetryConfig {
@@ -127,7 +133,11 @@ export interface Telemetry {
    * analytics event stream. No-op unless `analytics` is enabled.
    */
   track(name: string, properties?: Attributes): void;
-  /** The active trace id, for correlating your own logs. */
+  /**
+   * The active trace id, for correlating your own logs. Follows soft
+   * navigations: after Livewire/Inertia lands on a new server trace, this
+   * is that trace.
+   */
   traceId(): string;
   /** Force a flush now. */
   flush(): void;

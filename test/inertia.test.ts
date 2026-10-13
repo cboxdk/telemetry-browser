@@ -64,18 +64,31 @@ const visitTo = (path: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-/** What Inertia's router does for a visit, in order. */
-function inertiaVisit(path: string, headers: Record<string, string>, extra: Record<string, unknown> = {}) {
+/**
+ * What Inertia's router does for a visit, in order. v2/v3 finish with the
+ * same visit object; v1 finishes with a COPY (`activeVisit = {...visit}`).
+ */
+function inertiaVisit(
+  path: string,
+  headers: Record<string, string>,
+  extra: Record<string, unknown> = {},
+  { v1 = false, failWith }: { v1?: boolean; failWith?: string } = {},
+) {
   const visit = visitTo(path, extra);
   fire('inertia:before', { visit });
   fire('inertia:start', { visit });
+  const active = v1 ? { ...visit } : visit;
   nextResponseHeaders = { 'x-inertia': 'true', ...headers };
   xhr(visit.url.href);
-  window.history.pushState({}, '', path);
-  fire('inertia:navigate', { page: { url: path } });
-  fire('inertia:success', { page: { url: path } });
-  visit.completed = true;
-  fire('inertia:finish', { visit });
+  if (failWith) {
+    fire(`inertia:${failWith}`, {});
+  } else {
+    window.history.pushState({}, '', path);
+    fire('inertia:navigate', { page: { url: path } });
+    fire('inertia:success', { page: { url: path } });
+  }
+  active.completed = true;
+  fire('inertia:finish', { visit: active });
   return visit;
 }
 
@@ -220,4 +233,77 @@ describe('Inertia router visits', () => {
     expect(nav[0]!.attributes[ATTR.NAVIGATION_TRACE_SOURCE]).toBe('none');
     expect(spans.some((s) => s.name === SPAN.ROUTE_CHANGE)).toBe(false);
   });
+
+  it('closes a v1 visit, whose finish event carries a copy of the visit', async () => {
+    inertiaVisit('/v1-page', { 'x-trace-id': PAGE_TRACE }, {}, { v1: true });
+
+    const nav = (await sent()).filter((s) => s.name === SPAN.NAVIGATION);
+    expect(nav).toHaveLength(1);
+    expect(nav[0]!.attributes[ATTR.NAVIGATION_OUTCOME]).toBe('completed');
+    expect(nav[0]!.attributes[ATTR.URL_PATH]).toBe('/v1-page');
+  });
+
+  it.each(['httpException', 'networkError'])('marks a v3 %s visit as failed and does not follow it', async (event) => {
+    const before = t.traceId();
+    inertiaVisit('/v3-broken', { traceresponse: `00-${OTHER_TRACE}-${OTHER_SPAN}-01` }, {}, { failWith: event });
+
+    const n = (await sent()).find((s) => s.name === SPAN.NAVIGATION)!;
+    expect(n.status).toBe('error');
+    expect(n.attributes[ATTR.NAVIGATION_TRACE_SOURCE]).toBe('none');
+    expect(t.traceId()).toBe(before);
+  });
+
+  it('does not adopt an unsampled traceresponse span; falls back to the navigation span', async () => {
+    const before = t.traceId();
+    inertiaVisit('/unsampled', { traceresponse: `00-${OTHER_TRACE}-${OTHER_SPAN}-00` });
+    xhr('/api/after');
+
+    const spans = await sent();
+    const n = spans.find((s) => s.name === SPAN.NAVIGATION)!;
+    expect(n.attributes[ATTR.NAVIGATION_TRACE_SOURCE]).toBe('navigation');
+    const later = spans.find((s) => s.attributes[ATTR.HTTP_URL] === '/api/after')!;
+    expect(later.traceId).toBe(before);
+    expect(later.parentSpanId).toBe(n.spanId);
+  });
+
+  it('labels a prefetch-cache click (navigate, no popstate) as cached, not history', async () => {
+    window.history.pushState({}, '', '/prefetched'); // Inertia's own pushState
+    fire('inertia:navigate', { page: { url: '/prefetched' } }); // v2: no cached flag
+    window.history.pushState({}, '', '/prefetched-v3');
+    fire('inertia:navigate', { page: { url: '/prefetched-v3' }, cached: true }); // v3
+
+    const nav = (await sent()).filter((s) => s.name === SPAN.NAVIGATION);
+    expect(nav.map((s) => [s.attributes[ATTR.NAVIGATION_HISTORY], s.attributes[ATTR.NAVIGATION_CACHED]])).toEqual([
+      [false, true],
+      [false, true],
+    ]);
+  });
+
+  it('treats router.reload() and v3 reset as data refreshes, not navigations', async () => {
+    for (const extra of [{}, { reset: ['items'] }]) {
+      const visit = visitTo(location.pathname + location.search, extra);
+      fire('inertia:start', { visit });
+      visit.completed = true;
+      fire('inertia:finish', { visit });
+    }
+    expect((await sent()).some((s) => s.name === SPAN.NAVIGATION)).toBe(false);
+  });
+
+  it('clears the navigation timeout once the visit finishes', async () => {
+    // Watch THE navigation timer (30 s), not a global timer count — other
+    // timers may exist depending on the environment.
+    const set = vi.spyOn(globalThis, 'setTimeout');
+    const clear = vi.spyOn(globalThis, 'clearTimeout');
+    try {
+      inertiaVisit('/timers', {});
+      const index = set.mock.calls.findIndex((c) => c[1] === 30_000);
+      expect(index).toBeGreaterThanOrEqual(0);
+      const handle = set.mock.results[index]!.value;
+      expect(clear).toHaveBeenCalledWith(handle);
+    } finally {
+      set.mockRestore();
+      clear.mockRestore();
+    }
+  });
 });
+

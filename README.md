@@ -7,7 +7,7 @@ shipped to your app's ingest endpoint and joined to the backend trace via
 W3C `traceparent`. One trace id, one waterfall: **click → browser span →
 request span → queries → jobs.**
 
-- ~6 KB gzipped (Web Vitals included), zero config to get started.
+- ~9.5 KB gzipped (Web Vitals included), zero config to get started.
 - No `@opentelemetry/*` — a lean, tailored SDK that matches the ingest
   endpoint exactly and emits the **same dimensions as the backend**, so
   `cboxdk/laravel-telemetry-ui` cross-links frontend and backend out of
@@ -62,6 +62,7 @@ same keys. Exported as `ATTR` for the UI to align against.
 | HTTP | `http.request.method`, `http.response.status_code` | fetch/XHR |
 | Device / client | `user_agent.original`, `browser.language`, `browser.viewport`, `network.connection.type`, `device.memory_gb` | page load |
 | Page timing | `browser.ttfb_ms`, `browser.fcp_ms`, `browser.dom_interactive_ms` | page load |
+| Server-Timing | `server_timing.<name>.duration_ms`, `server_timing.<name>.description` | page load, fetch/XHR |
 | Web Vitals | `web_vital.name`, `web_vital.value`, `web_vital.rating` | vital markers |
 | Errors | `exception.type`, `exception.message`, `exception.file`, `exception.line`, `exception.column`, `exception.group`, `exception.stacktrace` | error spans |
 
@@ -78,6 +79,8 @@ Span names are a small bounded set (`SPAN`): `browser.page_load`,
 - **fetch & XHR** — a client span per call, with `traceparent` propagated
   to **same-origin** requests so the backend continues the trace
   (cross-origin is left untouched to avoid CORS preflight).
+- **Server-Timing** — the backend's `Server-Timing` metrics on the spans
+  they describe (see below).
 - **Errors** — uncaught errors and unhandled promise rejections as
   exception spans, matching the backend's `exception.*` keys.
 - **SPA route changes** — `history` pushState/replaceState + popstate as
@@ -91,26 +94,31 @@ Toggle any of them via `instrument: { fetch: false, ... }`.
 ## Livewire & Inertia soft navigations
 
 Detected automatically from the frameworks' own events; nothing to
-configure. Once a framework is seen it owns navigation, and the generic
-`history` handler stops recording, so a navigation is never counted twice
-(the framework's own `pushState` would otherwise look like a second one).
+configure. Once a framework actually navigates (a `livewire:navigate`, or
+any Inertia router event), it owns navigation and the generic `history`
+handler stops recording, so a navigation is never counted twice (the
+framework's own `pushState` would otherwise look like a second one). A
+Livewire page that never uses `wire:navigate` keeps generic tracking.
 
-| | Livewire 3 (`wire:navigate`) | Inertia v1 / v2 |
+| | Livewire 3 / 4 (`wire:navigate`) | Inertia v1 / v2 / v3 |
 |---|---|---|
 | Span starts | `livewire:navigate` | `inertia:start` |
 | Span ends | `livewire:navigated` | `inertia:finish` |
-| Back/forward | `livewire:navigate` with `history: true` | `inertia:navigate` without a visit |
-| Ignored | a `livewire:navigate` another listener prevented | prefetches, `async` visits, partial reloads (`only`/`except`) of the current page |
+| Failed | no finish event: closed as `timeout` after 30 s | `inertia:exception`/`invalid` (v1/v2), `inertia:httpException`/`networkError` (v3) |
+| Back/forward | `livewire:navigate` with `history: true` | `inertia:navigate` without a visit, right after a `popstate` |
+| Prefetch-cache click | the navigation itself; the fetch happened earlier | `inertia:navigate` without a visit (`cached`) |
+| Ignored | a `livewire:navigate` another listener prevented | prefetches, `async` visits, `router.reload()`, partial reloads (`only`/`except`/`reset`) of the current page |
 
 Each `browser.navigation` span carries `browser.navigation.framework`,
 `browser.navigation.outcome` (`completed`/`cancelled`/`interrupted`, or
 `timeout` when no finish event came within 30 s, e.g. a failed Livewire fetch),
 `browser.route.from`, `url.path`/`http.url` of the new page,
 `browser.navigation.history`, `browser.navigation.cached`, and for Livewire
-`browser.navigation.fetch_ms` (time until the page HTML was in hand; the
-rest is the swap). An analytics page view is emitted once per completed
-navigation that changed the path. The request that fetched the page is a
-child of the navigation span.
+`browser.navigation.fetch_ms` (from `livewire:navigate` until the page HTML
+was in hand; the rest is the swap). An analytics page view is emitted once
+per completed navigation that changed the path. A page request that starts
+*during* the navigation is its child. Inertia visits work that way;
+Livewire link clicks usually don't (see Limits).
 
 **Which trace later requests join** (recorded as
 `browser.navigation.trace_source`):
@@ -124,20 +132,31 @@ child of the navigation span.
   - `traceresponse` — a W3C `traceresponse` header on the page response is
     adopted (trace and span id).
   - `navigation` — otherwise, later requests parent to the navigation span
-    itself, in the same trace. The page request carried our `traceparent`,
+    itself, in the same trace. This is also the fallback for Livewire when
+    the new page has no meta. The page request carried our `traceparent`,
     so a backend that continues incoming traces (laravel-telemetry's
     default) put its request span under that navigation too.
   - `none` — if the `X-Trace-Id` header (`traceIdHeader`; laravel-telemetry's
     `traces.response_header`) shows the server started a *different* trace,
     the SDK can't join it without a span id. The trace stays put and the
     server's id is recorded as `browser.navigation.server_trace_id`.
+- A meta or `traceresponse` whose sampled flag is `00` is not adopted: the
+  server didn't record that span, so children would hang off nothing. The
+  navigation span is used instead. Propagated `traceparent` headers carry
+  the server's sampling flag rather than always `01`.
 - Cached restores, cancelled/interrupted/failed visits never move the trace.
+- `telemetry.traceId()` follows: it returns the active trace after a soft
+  navigation moved it.
 
 Limits:
 
-- A page Livewire prefetched (`wire:navigate.hover`, or on mousedown) is
-  fetched *before* `livewire:navigate`, so that fetch span is not under the
-  navigation span. The new meta is still adopted.
+- Livewire fetches a link's page on **mousedown** (or on hover with
+  `wire:navigate.hover`) and fires `livewire:navigate` only on release. For
+  link clicks the page request therefore usually starts *before* the
+  navigation span and is not its child, and `fetch_ms` is a lower bound on
+  the fetch time. The new meta is still adopted. `Livewire.navigate()` and
+  uncached back/forward fetch after the event, so there the request is a
+  child.
 - A Livewire cached back/forward restore leaves later requests on the trace
   you navigated away from, not the restored page's old one: that page's
   server span ended long ago.
@@ -150,6 +169,32 @@ Limits:
 - Put `@telemetryBrowser` (or your SDK `<script>`) in `<head>`. The
   standalone build initialises once per document, so if Livewire runs it
   again from `<body>` that second run is a no-op.
+
+## Server-Timing
+
+When the backend sends a `Server-Timing` header (laravel-telemetry can, opt
+in), the SDK puts each metric on the span for that response:
+
+```
+Server-Timing: db;dur=12.3;desc="3 queries", app;dur=48.1
+→ server_timing.db.duration_ms = 12.3
+  server_timing.db.description = "3 queries"
+  server_timing.app.duration_ms = 48.1
+```
+
+- **Page load**: read from the navigation entry
+  (`performance.getEntriesByType('navigation')[0].serverTiming`).
+- **fetch / XHR**: parsed from the response's own `Server-Timing` header,
+  so it is exact even when the same URL is requested many times.
+- Names are lowercased and sanitized to `[a-z][a-z0-9_]*` (`DB-Read` →
+  `db_read`); at most 10 metrics per span; a repeated name keeps its first
+  entry. A metric with no `dur` records `0`; `description` only when set.
+- **Cross-origin** fetch/XHR: the browser hides the header unless the
+  server sends `Access-Control-Expose-Headers: Server-Timing`. The SDK
+  reads the header, not resource timing entries, so `Timing-Allow-Origin`
+  is not needed. Same-origin needs nothing.
+- Turn it off with `instrument: { serverTiming: false }`
+  (`data-server-timing="0"`).
 
 ## Source maps (symbolication)
 
@@ -222,7 +267,7 @@ telemetry.flush();
 | `attributes` | `{}` | extra global dimensions |
 | `sampleRate` | `1` | head sampling, decided once per page |
 | `analytics` | `false` | unsampled analytics channel: SPA page views, engagement, `track()` |
-| `instrument` | all on | per-instrumentation toggles (`frameworks: false` turns off Livewire/Inertia handling) |
+| `instrument` | all on | per-instrumentation toggles (`frameworks: false` turns off Livewire/Inertia handling, `serverTiming: false` stops reading `Server-Timing`) |
 | `traceIdHeader` | `X-Trace-Id` | the backend's trace-id response header (`data-trace-header`); `''` ignores it |
 | `maxSpans` | `128` | buffer cap before a forced flush |
 

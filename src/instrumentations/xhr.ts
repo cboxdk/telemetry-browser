@@ -1,22 +1,44 @@
-import { buildTraceparent, spanId } from '../ids';
+import { buildTraceparent, isSameOrigin, spanId } from '../ids';
 import { ATTR } from '../semconv';
+import { parseServerTiming, serverTimingAttributes } from '../serverTiming';
 import { now } from '../tracer';
 import type { Tracer } from '../tracer';
 
+/**
+ * Reads `Server-Timing` without the console warning `getResponseHeader`
+ * logs for a header a cross-origin response did not expose.
+ */
+function serverTimingHeader(xhr: XMLHttpRequest, sameOrigin: boolean): string | null {
+  if (sameOrigin) return xhr.getResponseHeader('server-timing');
+  const all = xhr.getAllResponseHeaders();
+  const match = /^server-timing:(.*)$/im.exec(all);
+  return match ? match[1]!.trim() : null;
+}
+
 /** Same as fetch instrumentation, for XMLHttpRequest. */
-export function instrumentXhr(tracer: Tracer): void {
+export function instrumentXhr(tracer: Tracer, serverTiming = true): void {
   const Xhr = window.XMLHttpRequest;
-  if (!Xhr) return;
+  // A second init() must not double-wrap (two spans + two traceparents per call).
+  if (!Xhr || (Xhr.prototype as { __cboxTelemetry?: boolean }).__cboxTelemetry) return;
+  (Xhr.prototype as { __cboxTelemetry?: boolean }).__cboxTelemetry = true;
 
   const open = Xhr.prototype.open;
   const send = Xhr.prototype.send;
 
   type Tracked = XMLHttpRequest & {
-    __tel?: { method: string; url: string; id: string; start: number; traceId: string; parentSpanId: string };
+    __tel?: {
+      method: string;
+      url: string;
+      id: string;
+      start: number;
+      traceId: string;
+      parentSpanId: string;
+      sampled: boolean;
+    };
   };
 
   Xhr.prototype.open = function (this: Tracked, method: string, url: string | URL, ...rest: unknown[]) {
-    this.__tel = { method: method.toUpperCase(), url: String(url), id: spanId(), start: 0, traceId: '', parentSpanId: '' };
+    this.__tel = { method: method.toUpperCase(), url: String(url), id: spanId(), start: 0, traceId: '', parentSpanId: '', sampled: true };
     // @ts-expect-error — forwarding the native signature
     return open.call(this, method, url, ...rest);
   };
@@ -29,15 +51,24 @@ export function instrumentXhr(tracer: Tracer): void {
       const scope = tracer.context.scope();
       t.traceId = scope.traceId;
       t.parentSpanId = scope.parentSpanId;
-      const sameOrigin = t.url.startsWith('/') || t.url.startsWith(location.origin);
+      t.sampled = scope.sampled;
+      const sameOrigin = isSameOrigin(t.url);
       if (sameOrigin) {
         try {
-          this.setRequestHeader('traceparent', buildTraceparent(t.traceId, t.id));
+          this.setRequestHeader('traceparent', buildTraceparent(t.traceId, t.id, t.sampled));
         } catch {
           /* header may be locked — ignore */
         }
       }
       this.addEventListener('loadend', () => {
+        let timing;
+        if (serverTiming && this.status !== 0) {
+          try {
+            timing = serverTimingAttributes(parseServerTiming(serverTimingHeader(this, sameOrigin)));
+          } catch {
+            /* unreadable headers — the span still records */
+          }
+        }
         tracer.record({
           name: `xhr ${t.method}`,
           kind: 'client',
@@ -51,6 +82,7 @@ export function instrumentXhr(tracer: Tracer): void {
             [ATTR.HTTP_METHOD]: t.method,
             [ATTR.HTTP_URL]: t.url,
             [ATTR.HTTP_STATUS]: this.status,
+            ...timing,
           },
         });
         if (sameOrigin && this.status !== 0) {

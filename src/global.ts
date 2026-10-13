@@ -41,6 +41,7 @@ export * from './index';
       navigation: d.navigation !== '0',
       frameworks: d.frameworks !== '0',
       webVitals: d.vitals !== '0',
+      serverTiming: d.serverTiming !== '0',
     },
   });
 })();
